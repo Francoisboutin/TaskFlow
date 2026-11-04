@@ -580,3 +580,98 @@ En vue Kanban, pendant un sprint, un ticket ajouté (ou modifié) qui n'est pas 
 ### Impacts sur l'existant
 
 - Aucun sur les règles R1 à R6 ni sur la sauvegarde. Le Kanban sans sprint en cours est identique à avant.
+
+---
+
+## B6 · Au démarrage d'un sprint, ses tickets « Backlog » passent « À faire »
+
+- **Sujet** : `demarrage-sprint`
+- **Demande** : « Fais en sorte que tous les tickets pris dans un sprint soient mis à l'état "à faire" au démarrage du sprint (à faire uniquement pour les tickets qui sont à l'état "backlog"). »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+Un ticket engagé dans un sprint n'est plus « en attente au backlog » : quand le sprint démarre, il est à faire. Les tickets déjà commencés (En cours, En revue, Terminé) gardent leur colonne.
+
+### Données
+
+**Sprint** : un champ de plus, **`demarreLe`** : `null` tant que le sprint n'a pas démarré, puis la date du démarrage (`AAAA-MM-JJ`). Il garantit que le démarrage n'a lieu **qu'une fois** : un ticket remis à la main dans « Backlog » pendant le sprint y reste.
+
+**Définitions**
+- Un sprint **démarre** quand il est ouvert, que sa date de début est atteinte (`debut ≤ aujourd'hui`, B5.1) et qu'il n'a pas encore démarré (`demarreLe: null`).
+- **Backlog** = première colonne de `COLONNES` ; **À faire** = la colonne suivante.
+- La date du jour est reçue en paramètre (`aujourdhui`).
+
+### Critères d'acceptation (8)
+
+Fonctions pures (zone 2), tableaux reçus jamais modifiés (R4).
+
+#### B6.1 · Démarrer les sprints du jour — `demarrerSprints(tickets, sprints, aujourdhui)`
+
+Renvoie `{ tickets, sprints, demarres }` : `demarres` = `[{ sprintId, tickets: [numéros passés « À faire »] }]`, un élément par sprint qui démarre.
+
+| Cas | Étant donné (aujourd'hui = 2026-11-04) | Alors |
+|---|---|---|
+| a | sprint ouvert commencé le 2026-11-04, pas démarré, avec #3 et #4 dans « Backlog » | #3 et #4 passent « À faire » ; `demarreLe` = `'2026-11-04'` ; `demarres` = `[{ sprintId: 1, tickets: [3, 4] }]` |
+| b | sprint commencé le 2026-11-02, pas encore démarré (application pas ouverte depuis) | il démarre aussi aujourd'hui |
+
+#### B6.2 · Seuls les tickets « Backlog » du sprint changent
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | dans le sprint : #5 « En cours », #6 « Terminé » | inchangés |
+| b | hors du sprint : #1 « Backlog » | inchangé |
+| c | — | tableaux reçus intacts ; les tickets inchangés sont les mêmes objets |
+
+#### B6.3 · Le démarrage n'a lieu qu'une fois
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | sprint déjà démarré (`demarreLe` renseigné), un de ses tickets remis dans « Backlog » | rien ne change ; `demarres` = `[]` |
+| b | rien à démarrer | les tableaux reçus sont renvoyés tels quels (mêmes objets) |
+
+#### B6.4 · Ni avant la date, ni après la clôture
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | sprint qui commence demain | rien ; le lendemain (date injectée), il démarre |
+| b | sprint clôturé | rien |
+
+#### B6.5 · Ticket mis dans un sprint déjà démarré — `aFaireSiSprintDemarre(tickets, sprints, idTicket)`
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | sprint démarré, ticket #7 « Backlog » qui vient d'y entrer | #7 passe « À faire » |
+| b | sprint démarré, ticket « En cours » | inchangé |
+| c | sprint pas encore démarré | #7 reste « Backlog » (il passera « À faire » au démarrage) |
+| d | ticket hors sprint, ou inconnu | rien ne change, sans exception |
+
+#### B6.6 · Nouveau sprint
+
+`creerSprint` crée le sprint avec `demarreLe: null` (B1.1a est complété).
+
+#### B6.7 · Sauvegarde v7 (« sauvegarde d'hier » en v6)
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | aller-retour d'une sauvegarde avec un sprint démarré | `demarreLe` identique |
+| b | **sauvegarde version 6** | `origine: 'migration-v6'` ; chaque sprint a `demarreLe: null` ; sprints, `sprintId`, bloquants et échéances conservés. Un sprint déjà commencé démarrera au premier affichage (ses tickets « Backlog » passeront « À faire ») |
+| c | `demarreLe` abîmé (« 2026-02-30 », 12) | `null`, rien ne plante |
+| d | version 8 | `origine: 'version-inconnue'` |
+
+#### B6.8 · Interface (vérifiée à la main)
+
+- Le démarrage a lieu à l'affichage de la page, dès que la date de début est atteinte ; une notification l'annonce : « Sprint « Sprint 14 » démarré : 2 tickets passés « À faire ». » (rien n'est annoncé si aucun ticket ne change).
+- Un ticket mis dans un sprint démarré (bouton +, glisser-déposer) est annoncé « … mis dans le sprint « Sprint 14 », et passé « À faire » ».
+- Ces passages automatiques ne sont pas notés dans « Derniers déplacements » (comme la clôture, B1.5).
+
+### Hors périmètre
+
+- Remettre automatiquement un ticket au Backlog quand on le sort du sprint.
+- Démarrer un sprint à la main avant sa date.
+
+### Impacts sur l'existant
+
+- **Sprint** : un champ de plus (`demarreLe`). Les tests qui comparent un sprint champ par champ (T16 pour B1.1a, T27 pour l'aller-retour) l'attendent.
+- **Sauvegarde** : version 6 → 7 (`VERSION_SAUVEGARDE = 7`) ; une sauvegarde v6 devient une migration (`migration-v6`).
+- R1 à R6 inchangées : le passage Backlog → À faire respecte les règles de `deplacerTicket` (un ticket de sprint est toujours estimé).
