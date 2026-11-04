@@ -1,6 +1,11 @@
 # AGENTS.md · TaskFlow
 
-Règles communes à tous les agents qui travaillent sur TaskFlow. Chaque agent a en plus sa fiche dans `.github/agents/`.
+Règles communes à tous les agents qui travaillent sur TaskFlow. Chaque agent a en plus sa fiche, en deux versions **à garder alignées** :
+
+| Outil | Fiches | Relais |
+|---|---|---|
+| GitHub Copilot (VS Code) | `.github/agents/*.agent.md` | boutons de *handoff* ; chaque agent commite ses fichiers |
+| Claude Code | `.claude/agents/*.md` (`analyste-po`, `testeur-qa`, `dev-js`) | la session principale enchaîne les sous-agents et commite après avoir vérifié leurs fichiers (voir `CLAUDE.md`) |
 
 ## Le projet
 
@@ -13,8 +18,9 @@ taskflow/
 ├─ app.js       1. Données · 2. Règles · 3. UI          ← @Dev-JS
 ├─ tests.js     auto-tests                              ← @Testeur-QA
 ├─ docs/        spécifications (dont docs/spec.md)      ← @Analyste-PO
-├─ AGENTS.md    ce fichier
-└─ .github/     agents/ (fiches des agents) · skills/fonctionnalite-taskflow/
+├─ AGENTS.md    ce fichier (CLAUDE.md l'importe pour Claude Code)
+├─ .github/     agents/ (fiches Copilot) · skills/fonctionnalite-taskflow/ (lanceur, mutants, sauvegardes)
+└─ .claude/     agents/ (les mêmes agents, pour Claude Code)
 ```
 
 Lire `docs/README.md` pour l'architecture et les règles métier existantes (R1 à R5, I1 à I5).
@@ -35,7 +41,9 @@ Outils (`tools`) déclarés dans chaque fiche `.github/agents/*.agent.md`, au pl
 | **Testeur-QA** | `vscode, execute, read, edit, search, todo` | `execute` pour lancer les tests, les mutations et le rechargement des sauvegardes |
 | **Dev-JS** | `vscode, execute, read, edit, search, todo` | `execute` pour lancer les tests jusqu'au vert |
 
-L'outil `edit` ne peut pas être limité à certains fichiers : ce sont les règles ci-dessus, et la vérification des diffs par le Testeur-QA, qui gardent chacun dans ses fichiers.
+Dans Claude Code (`.claude/agents/`), les mêmes droits s'écrivent `tools: Read, Grep, Glob, Edit, Write` pour l'Analyste-PO (**sans `Bash`**) et `tools: Read, Grep, Glob, Edit, Write, Bash` pour le Testeur-QA et le Dev-JS.
+
+L'outil d'édition ne peut pas être limité à certains fichiers : ce sont les règles ci-dessus, la vérification des diffs par le Testeur-QA et, dans Claude Code, la vérification par la session principale avant chaque commit, qui gardent chacun dans ses fichiers.
 
 Un agent qui a besoin d'un changement hors de ses fichiers **ne le fait pas lui-même** : il le signale et passe le relais à l'agent concerné (boutons de *handoff*).
 
