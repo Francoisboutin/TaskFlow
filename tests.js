@@ -22,6 +22,8 @@
     nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
     // B2 · Dépendances et blocages (docs/spec.md)
     definirBloquants, bloquantsActifs, retirerDesBloquants,
+    // B3 · Échéances et calendrier (docs/spec.md)
+    urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
@@ -39,14 +41,14 @@
      champ « assigne » et migration v2 → v3, journal et « Annuler »).
      T12 : annuler n’importe lequel des 10 derniers déplacements.
      T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
-     T29 à T36 : B2 dépendances et blocages.
+     T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
     return Object.freeze(objet);
   }
-  // Un ticket au modèle exact (10 champs depuis B2 : sprintId, puis bloquePar en dernier)
-  const ticketDeTest = (id, statut, points, sprintId = null, bloquePar = []) => ({ id, titre: `Ticket de test ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: null, sprintId, bloquePar });
+  // Un ticket au modèle exact (11 champs depuis B3 : sprintId, bloquePar, puis echeance en dernier)
+  const ticketDeTest = (id, statut, points, sprintId = null, bloquePar = [], echeance = null) => ({ id, titre: `Ticket de test ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: null, sprintId, bloquePar, echeance });
   const LIMITE_WIP = COLONNE_LIMITEE ? COLONNE_LIMITEE.wip : 0;
   const COLONNE_SUIVANTE = COLONNES[1];
   const estPleineSelonLesStats = tickets => calculerStats(tickets).colonnes.find(colonne => colonne.id === COLONNE_LIMITEE.id).plein;
@@ -76,7 +78,7 @@
 
   /* ---------- Outils des tests B1 (sprints et burndown, docs/spec.md) ---------- */
   const DERNIERE = COLONNES[COLONNES.length - 1];                         // « Terminé »
-  const NBSP = ' ';                                                  // espace insécable des messages (« ␣: »)
+  const NBSP = '\u00a0';                                                  // espace insécable des messages (« ␣: »)
   // Fonctions attendues mais absentes de window.TaskFlow (le test est alors rouge, avec ce détail)
   const absentes = fonctions => Object.entries(fonctions).filter(([, fonction]) => typeof fonction !== 'function').map(([nom]) => `${nom}()`);
   const testAbsent = manquantes => ({ reussi: false, detail: `Pas encore codé : ${manquantes.join(', ')} absente${manquantes.length > 1 ? 's' : ''} de window.TaskFlow` });
@@ -230,7 +232,7 @@
       const relu = charger(JSON.stringify(enveloppeDeSauvegarde(etatTest)));
       const v1 = charger(JSON.stringify([{ id: 4, titre: 'Ticket écrit par la version 1' }, { titre: 'Sans numéro', points: 5 }]));
       const ticketV1 = v1.donnees && v1.donnees.projets[0].tickets[0];
-      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar';   // B1 : sprintId ; B2 : bloquePar
+      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar,echeance';   // B1 : sprintId ; B2 : bloquePar ; B3 : echeance
       const etapes = [
         ['premier lancement (rien d’enregistré) → démonstration', charger(null).origine === 'premier-lancement' && charger(null).donnees === null],
         ['« {oups » (donnée corrompue) → démonstration, sans exception', charger('{oups').origine === 'illisible' && charger('{oups').donnees === null],
@@ -291,7 +293,7 @@
       const identique = resultat => resultat.ok && resultat.exact && JSON.stringify(resultat.tickets) === JSON.stringify(avant.tickets.map(construireTicket)) && JSON.stringify(resultat.ordreManuel) === '[2,1]';
       const etapes = [
         ['sauvegarde v2 → migrée en v3, sans erreur', lu.origine === 'migration-v2' && tickets.length === 2],
-        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.7c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar' && ticket.sprintId === null && Array.isArray(ticket.bloquePar) && ticket.bloquePar.length === 0) && tickets[0].statut === 'termine'],
+        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.7c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar,echeance' && ticket.echeance === null && ticket.sprintId === null && Array.isArray(ticket.bloquePar) && ticket.bloquePar.length === 0) && tickets[0].statut === 'termine'],
         ['« Annuler » rend exactement l’état d’avant (tickets et ordre)', identique(annule) && annule.journal.length === 0],
         ['… y compris après rechargement (journal sauvegardé)', relu.origine === 'sauvegarde' && identique(annuleApresF5) && relu.donnees.utilisateur === 'Camille'],
         ['journal limité aux 10 derniers déplacements', Array.from({ length: 14 }).reduce(liste => journaliser(liste, { id: 1 }), []).length === JOURNAL_MAX],
@@ -679,7 +681,7 @@
           sprints: [sprintDeTest(1, 20), sprintDeTest(2, 20, { debut: '2026-02-30' }), sprintDeTest(3, 0), sprintDeTest(4, 20, { debut: '2026-01-01', fin: '2026-03-01' })] }],
         projetActif: 1, compteurs: { prochainTicket: 7, prochainProjet: 2, numerosAttribues: [1, 2, 3, 4, 5, 6] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
       const projetAbime = abimee.donnees && abimee.donnees.projets[0];
-      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar';
+      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar,echeance';
       return bilanDesEtapes([
         ['VERSION_SAUVEGARDE vaut au moins 4 (B1)', VERSION_SAUVEGARDE >= 4],
         ['B1.7a : aller-retour → origine « sauvegarde », tickets (sprintId compris) identiques', relu.origine === 'sauvegarde' && !!projetRelu && JSON.stringify(projetRelu.tickets) === JSON.stringify(projet.tickets)],
@@ -868,11 +870,153 @@
         ['B2.7g : import → bloquePar [] et colonne signalée « hors du modèle, ignorée »', analyse.ok && analyse.colonnesIgnorees.includes('bloquePar') && importes.length === 1
           && Array.isArray(importes[0].bloquePar) && importes[0].bloquePar.length === 0]
       ], () => JSON.stringify({ enteteCsv, json: json[0], ignorees: analyse.colonnesIgnorees, importes }), 'Export sans bloquePar ; import : bloquePar ignoré et signalé, tickets sans bloquant');
+    } },
+
+    /* ---------- B3 · Échéances et calendrier (docs/spec.md) ---------- */
+
+    { code: 'T37', groupe: 'b3', nom: 'B3.1 · échéance d’un ticket : 11e champ, modifiable, date invalide refusée', executer() {
+      const ticket = construireTicket({ ...ticketDeTest(1, COLONNES[1].id, 3) });
+      const sansChaine = construireTicket({ ...ticketDeTest(2, COLONNES[1].id, 3), echeance: 20261120 });
+      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3), ticketDeTest(2, COLONNES[1].id, 2, null, [], '2026-11-10')]);
+      const modifier = (id, changements) => essayer(() => modifierTicket(depart, id, changements));
+      const b = modifier(1, { echeance: '2026-11-20' });
+      const c = modifier(1, { echeance: '2026-02-30' });
+      const d = modifier(2, { echeance: null });
+      return bilanDesEtapes([
+        ['B3.1a : échéance null par défaut, 11e et dernier champ', ticket.echeance === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar,echeance'],
+        ['B3.1a : une valeur qui n’est pas une chaîne → null', sansChaine.echeance === null],
+        ['B3.1b : modifierTicket accepte une nouvelle échéance', b.ok === true && b.ticket.echeance === '2026-11-20'],
+        ['B3.1c : « 2026-02-30 » → erreur echeance', c.ok === false && !!c.erreurs && c.erreurs.echeance === 'L’échéance doit être une date au format AAAA-MM-JJ, ou vide.'],
+        ['B3.1d : null retire l’échéance', d.ok === true && d.ticket.echeance === null]
+      ], () => JSON.stringify({ ticket, b: b.ticket || b.erreurs || b.exception, c: c.erreurs || c.ok, d: d.ticket || d.erreurs }), 'Échéance : null par défaut, modifiable, retirable ; 30 février refusé');
+    } },
+
+    { code: 'T38', groupe: 'b3', nom: 'B3.2 · urgence : En retard, Aujourd’hui, J-1, J-2, terminé jamais en retard, date du jour injectée', executer() {
+      const manquantes = absentes({ urgence });
+      if (manquantes.length) return testAbsent(manquantes);
+      const avec = (echeance, statut = COLONNES[1].id) => gelerEnProfondeur(ticketDeTest(1, statut, 3, null, [], echeance));
+      const u = (echeance, aujourdhui = '2026-11-04', statut) => essayer(() => urgence(avec(echeance, statut), aujourdhui));
+      const egal = (obtenu, attendu) => jsonTrie(obtenu) === jsonTrie(attendu);
+      return bilanDesEtapes([
+        ['B3.2a : échéance 2026-11-01 → En retard, -3 jours', egal(u('2026-11-01'), { niveau: 'retard', jours: -3, libelle: 'En retard' })],
+        ['B3.2b : échéance le jour même → Aujourd’hui', egal(u('2026-11-04'), { niveau: 'aujourdhui', jours: 0, libelle: 'Aujourd’hui' })],
+        ['B3.2c : J-1 et J-2', egal(u('2026-11-05'), { niveau: 'proche', jours: 1, libelle: 'J-1' }) && egal(u('2026-11-06'), { niveau: 'proche', jours: 2, libelle: 'J-2' })],
+        ['B3.2d : 3 jours → plus tard, sans badge', egal(u('2026-11-07'), { niveau: 'plus-tard', jours: 3, libelle: '' })],
+        ['B3.2e : pas d’échéance → aucune', egal(u(null), { niveau: 'aucune', jours: null, libelle: '' })],
+        ['B3.2f : échéance passée mais ticket terminé → terminee, jamais en retard', egal(u('2026-11-01', '2026-11-04', DERNIERE.id), { niveau: 'terminee', jours: -3, libelle: '' })],
+        ['B3.2g : date du jour injectée : 2026-03-01 vu le 27 février → J-2, vu le 2 mars → En retard (-1)', egal(u('2026-03-01', '2026-02-27'), { niveau: 'proche', jours: 2, libelle: 'J-2' })
+          && egal(u('2026-03-01', '2026-03-02'), { niveau: 'retard', jours: -1, libelle: 'En retard' })],
+        ['B3.2h : passage à l’heure d’été (29 → 31 mars) : 2 jours', u('2026-03-31', '2026-03-29').jours === 2]
+      ], () => JSON.stringify({ retard: u('2026-11-01'), jour: u('2026-11-04'), j2: u('2026-11-06'), fev: u('2026-03-01', '2026-02-27') }), 'Badges justes autour des fins de mois et du changement d’heure ; terminé jamais en retard');
+    } },
+
+    { code: 'T39', groupe: 'b3', nom: 'B3.3 · trier par échéance (sans échéance toujours en dernier) et filtrer par urgence', executer() {
+      const manquantes = absentes({ creerComparateur, correspondAUrgence });
+      if (manquantes.length) return testAbsent(manquantes);
+      const t = (id, echeance, statut = COLONNES[1].id) => ticketDeTest(id, statut, 3, null, [], echeance);
+      const tickets = gelerEnProfondeur([t(1, null), t(2, '2026-11-20'), t(3, '2026-11-01'), t(4, '2026-11-05'), t(5, null), t(6, '2026-11-04'), t(7, '2026-10-01', DERNIERE.id)]);
+      const ordre = sens => essayer(() => [...tickets].sort(creerComparateur([{ critere: 'echeance', sens }])).map(ticket => ticket.id));
+      const passe = urgences => tickets.filter(ticket => correspondAUrgence(ticket, new Set(urgences), '2026-11-04')).map(ticket => ticket.id);
+      return bilanDesEtapes([
+        ['B3.3a : croissant → la plus proche d’abord, sans échéance en dernier : [7, 3, 6, 4, 2, 1, 5]', JSON.stringify(ordre('asc')) === '[7,3,6,4,2,1,5]'],
+        ['B3.3b : décroissant → la plus lointaine d’abord, sans échéance toujours en dernier : [2, 4, 6, 3, 7, 1, 5]', JSON.stringify(ordre('desc')) === '[2,4,6,3,7,1,5]'],
+        ['B3.3c : filtre « retard » → [3] (le #7 terminé n’est pas en retard)', JSON.stringify(passe(['retard'])) === '[3]'],
+        ['B3.3d : filtre « proche » → aujourd’hui et J-1 : [4, 6]', JSON.stringify(passe(['proche'])) === '[4,6]'],
+        ['B3.3e : filtre « sans » → [1, 5]', JSON.stringify(passe(['sans'])) === '[1,5]'],
+        ['B3.3f : « retard » + « proche » → [3, 4, 6] ; aucun filtre → tous', JSON.stringify(passe(['retard', 'proche'])) === '[3,4,6]' && passe([]).length === tickets.length]
+      ], () => JSON.stringify({ asc: ordre('asc'), desc: ordre('desc'), retard: passe(['retard']), proche: passe(['proche']), sans: passe(['sans']) }), 'Tri par échéance (sans échéance en dernier) ; filtres retard, proche, sans, combinables');
+    } },
+
+    { code: 'T40', groupe: 'b3', nom: 'B3.4 · ajouter des mois : 31 janvier + 1 mois = 28 février (jamais le 3 mars)', executer() {
+      const manquantes = absentes({ ajouterMois });
+      if (manquantes.length) return testAbsent(manquantes);
+      const cas = [['2026-01-31', 1, '2026-02-28', 'B3.4a : 31 janvier + 1 mois'], ['2028-01-31', 1, '2028-02-29', 'B3.4b : année bissextile'], ['2026-03-31', -1, '2026-02-28', 'B3.4c : 31 mars − 1 mois'],
+        ['2026-12-15', 1, '2027-01-15', 'B3.4d : changement d’année'], ['2026-01-15', -1, '2025-12-15', 'B3.4e : − 1 mois en janvier'], ['2026-01-15', 12, '2027-01-15', 'B3.4e : + 12 mois'], ['2026-05-31', 1, '2026-06-30', 'B3.4f : 31 mai + 1 mois']];
+      const obtenus = cas.map(([date, nombre]) => essayer(() => ajouterMois(date, nombre)));
+      return bilanDesEtapes(cas.map(([date, nombre, attendu, libelle], rang) => [`${libelle} : ${date} ${nombre > 0 ? '+' : '−'} ${Math.abs(nombre)} → ${attendu}`, obtenus[rang] === attendu]),
+        () => JSON.stringify(obtenus), '31 janv. + 1 mois = 28 févr. (29 en 2028) ; changements d’année justes');
+    } },
+
+    { code: 'T41', groupe: 'b3', nom: 'B3.5 · grille du calendrier : lundi en premier, mois de 01 à 12, débordements, tickets placés', executer() {
+      const manquantes = absentes({ grilleDuMois });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [], '2026-11-20'), ticketDeTest(2, COLONNES[1].id, 3), ticketDeTest(3, COLONNES[1].id, 3, null, [], '2026-11-20')]);
+      const grille = mois => essayer(() => grilleDuMois(mois, tickets));
+      const cases = g => (g && Array.isArray(g.semaines) ? g.semaines.flat() : []);
+      const resume = g => { const toutes = cases(g); return { semaines: g && g.semaines ? g.semaines.length : 0, premiere: toutes.length ? toutes[0].date : null, derniere: toutes.length ? toutes[toutes.length - 1].date : null, dansLeMois: toutes.filter(c => c.dansLeMois).length, de7: !!(g && g.semaines && g.semaines.every(s => s.length === 7)) }; };
+      const fevrier = resume(grille('2026-02'));
+      const juin = resume(grille('2026-06'));
+      const novembre = grille('2026-11');
+      const decembre = grille('2026-12');
+      const case20 = cases(novembre).find(c => c.date === '2026-11-20');
+      return bilanDesEtapes([
+        ['B3.5a : février 2026 → 5 semaines de 7 cases, du 2026-01-26 au 2026-03-01, 28 jours du mois', fevrier.semaines === 5 && fevrier.de7 && fevrier.premiere === '2026-01-26' && fevrier.derniere === '2026-03-01' && fevrier.dansLeMois === 28],
+        ['B3.5b : juin 2026 (1er = lundi) → du 2026-06-01 au 2026-07-05', juin.premiere === '2026-06-01' && juin.derniere === '2026-07-05'],
+        ['B3.5c : novembre 2026 → 6 semaines, du 2026-10-26 au 2026-12-06, 30 jours du mois', resume(novembre).semaines === 6 && resume(novembre).premiere === '2026-10-26' && resume(novembre).derniere === '2026-12-06' && resume(novembre).dansLeMois === 30],
+        ['B3.5d : « 2026-12 » → décembre (31 jours, du 2026-11-30 au 2027-01-03), pas janvier', resume(decembre).dansLeMois === 31 && resume(decembre).premiere === '2026-11-30' && resume(decembre).derniere === '2027-01-03'
+          && cases(decembre).filter(c => c.dansLeMois).every(c => c.date.startsWith('2026-12-'))],
+        ['B3.5e : #1 et #3 (échéance le 20) dans la case du 20 novembre ; #2 (sans échéance) nulle part', !!case20 && JSON.stringify(case20.tickets) === '[1,3]' && !cases(novembre).some(c => c.tickets.includes(2))],
+        ['B3.5f : « 2026-13 », « 2026-00 », « novembre » → null', grille('2026-13') === null && grille('2026-00') === null && grille('novembre') === null]
+      ], () => JSON.stringify({ fevrier, juin, novembre: resume(novembre), decembre: resume(decembre), case20 }), 'Grilles justes (lundi en premier), décembre bien décembre, tickets dans la bonne case');
+    } },
+
+    { code: 'T42', groupe: 'b3', nom: 'B3.6 · résumé des retards par colonne', executer() {
+      const manquantes = absentes({ resumeDesRetards });
+      if (manquantes.length) return testAbsent(manquantes);
+      const t = (id, statut, echeance) => ticketDeTest(id, statut, 3, null, [], echeance);
+      const tickets = gelerEnProfondeur([t(1, COLONNES[1].id, '2026-11-01'), t(2, COLONNES[1].id, '2026-10-20'), t(3, COLONNES[2].id, '2026-11-03'), t(4, DERNIERE.id, '2026-10-01'), t(5, COLONNES[1].id, '2026-11-05'), t(6, COLONNE_BACKLOG.id, null)]);
+      const resume = essayer(() => resumeDesRetards(tickets, '2026-11-04'));
+      const attendues = COLONNES.slice(0, -1).map(colonne => ({ id: colonne.id, titre: colonne.titre, nombre: colonne.id === COLONNES[1].id ? 2 : colonne.id === COLONNES[2].id ? 1 : 0 }));
+      const vide = essayer(() => resumeDesRetards(gelerEnProfondeur([t(1, COLONNES[1].id, '2026-11-10')]), '2026-11-04'));
+      return bilanDesEtapes([
+        ['B3.6a : total 3 (le ticket terminé en retard ne compte pas, le J-1 non plus)', resume.total === 3],
+        ['B3.6a et b : une entrée par colonne sauf la dernière, dans l’ordre : À faire 2, En cours 1, les autres 0', Array.isArray(resume.colonnes) && jsonTrie(resume.colonnes) === jsonTrie(attendues)],
+        ['B3.6c : aucun retard → total 0', vide.total === 0]
+      ], () => JSON.stringify({ resume, vide }), 'Retards : À faire 2 · En cours 1 (total 3) ; terminé et J-1 exclus');
+    } },
+
+    { code: 'T43', groupe: 'b3', nom: 'B3.7 · sauvegarde v6 : aller-retour, migration v5 → v6 (sprints et bloquants gardés), échéance abîmée', executer() {
+      const projet = { id: 1, nom: 'Projet échéances', tickets: gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [], '2026-11-20'), ticketDeTest(2, COLONNES[1].id, 2)]),
+        ordreManuel: null, notesImport: {}, journal: [], sprints: [] };
+      const etatTest = { projets: [projet], projetActifId: 1, prochainIdTicket: 3, prochainIdProjet: 2, numerosAttribues: new Set([1, 2]), vue: 'calendrier', tri: triParDefaut(),
+        filtres: { ...filtresVides(), urgences: new Set(['retard']) }, utilisateur: '' };
+      const relu = charger(JSON.stringify(enveloppeDeSauvegarde(etatTest)));
+      const ticketV5 = (id, statut, points, sprintId, bloquePar) => ({ id, titre: `Ticket d’hier ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: 'Camille', sprintId, bloquePar });
+      const v5 = charger(JSON.stringify({ version: 5, tickets: [ticketV5(1, COLONNES[1].id, 3, 1, [2]), ticketV5(2, COLONNE_BACKLOG.id, 5, null, [])],
+        projets: [{ id: 1, nom: 'Hier', tickets: [1, 2], ordreManuel: null, notesImport: {}, journal: [], sprints: [sprintDeTest(1, 20)] }],
+        projetActif: 1, compteurs: { prochainTicket: 3, prochainProjet: 2, numerosAttribues: [1, 2] }, affichage: { vue: 'kanban', utilisateur: 'Camille', tri: triParDefaut(), filtres: {} } }));
+      const projetV5 = v5.donnees && v5.donnees.projets[0];
+      const abimee = charger(JSON.stringify({ version: 6, tickets: [ticketDeTest(1, COLONNES[1].id, 3, null, [], '2026-02-30'), { ...ticketDeTest(2, COLONNES[1].id, 2), echeance: 12 }],
+        projets: [{ id: 1, nom: 'Abîmé', tickets: [1, 2], ordreManuel: null, notesImport: {}, journal: [], sprints: [] }], projetActif: 1,
+        compteurs: { prochainTicket: 3, prochainProjet: 2, numerosAttribues: [1, 2] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
+      const projetAbime = abimee.donnees && abimee.donnees.projets[0];
+      return bilanDesEtapes([
+        ['VERSION_SAUVEGARDE vaut au moins 6', VERSION_SAUVEGARDE >= 6],
+        ['B3.7a : aller-retour → « sauvegarde », échéances identiques, vue « calendrier »', relu.origine === 'sauvegarde' && !!relu.donnees && JSON.stringify(relu.donnees.projets[0].tickets) === JSON.stringify(projet.tickets) && relu.donnees.vue === 'calendrier'],
+        ['B3.7a : filtre « Urgence » (retard) sauvegardé et relu', !!relu.donnees && relu.donnees.filtres.urgences instanceof Set && relu.donnees.filtres.urgences.has('retard')],
+        ['B3.7b : sauvegarde v5 → « migration-v5 », echeance null partout', v5.origine === 'migration-v5' && !!projetV5 && projetV5.tickets.every(ticket => ticket.echeance === null)],
+        ['B3.7b : sprints, sprintId et bloquePar conservés', !!projetV5 && projetV5.sprints.length === 1 && ticketParId(projetV5.tickets, 1).sprintId === 1 && JSON.stringify(ticketParId(projetV5.tickets, 1).bloquePar) === '[2]'],
+        ['B3.7d : échéances « 2026-02-30 » et 12 → null, rien ne plante', !!projetAbime && projetAbime.tickets.every(ticket => ticket.echeance === null)],
+        [`B3.7e : version ${VERSION_SAUVEGARDE + 1} → « version-inconnue »`, charger(`{"version":${VERSION_SAUVEGARDE + 1},"tickets":[],"projets":[]}`).origine === 'version-inconnue']
+      ], () => JSON.stringify({ relu: relu.origine, vue: relu.donnees && relu.donnees.vue, v5: v5.origine, abimee: abimee.origine, echeancesAbimees: projetAbime && projetAbime.tickets.map(ticket => ticket.echeance) }),
+      'v6 : aller-retour (échéances, filtre, vue calendrier) ; sauvegarde d’hier v5 migrée, sprints et bloquants gardés ; échéances abîmées → null');
+    } },
+
+    { code: 'T44', groupe: 'b3', nom: 'B3.7 · import et export : l’échéance n’est ni exportée ni importée', executer() {
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [], '2026-11-20')]);
+      const enteteCsv = ticketsEnCsv(tickets).replace(/^﻿/, '').split(/\r?\n/)[0];
+      const json = JSON.parse(ticketsEnJson(tickets));
+      const analyse = analyserFichier('import.csv', 'titre;points;echeance\nTicket avec échéance;3;2026-11-20');
+      const importes = analyse.ok ? importerTickets(analyse.lignes, [], { dateDuJour: '2026-11-04' }).importes : [];
+      return bilanDesEtapes([
+        ['B3.7f : export CSV et JSON sans echeance', enteteCsv === 'id;titre;type;priorite;points;statut;creeLe;assigne' && Array.isArray(json) && !('echeance' in json[0])],
+        ['B3.7g : import → echeance null, colonne signalée « hors du modèle, ignorée »', analyse.ok && analyse.colonnesIgnorees.includes('echeance') && importes.length === 1 && importes[0].echeance === null]
+      ], () => JSON.stringify({ enteteCsv, json: json[0], ignorees: analyse.colonnesIgnorees, importes }), 'Export sans échéance ; import : colonne ignorée et signalée');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
