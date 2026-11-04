@@ -741,3 +741,83 @@ Lignes lisibles et alignées à 1 600 px ; sur téléphone (390 px), rien ne dé
 ### Impacts sur l'existant
 
 - Aucun sur les règles ni sur la sauvegarde. `htmlTicketDeSprint` est exposée dans `window.TaskFlow` pour être testée (comme `dessinerBurndown`).
+
+---
+
+## B8 · Listes déroulantes des tickets bloquants
+
+- **Sujet** : `liste-bloquants`
+- **Demande** : « Pour les tickets bloqués, fais en sorte qu'une liste déroulante s'affiche où on peut cliquer sur les tickets bloquants. » — précisé : **les deux usages** : voir et ouvrir les bloquants depuis le badge 🔒, et les choisir dans le formulaire.
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+Le badge 🔒 ne donnait que des numéros (les titres au survol) : impossible d'aller voir un bloquant en un clic. Et pour déclarer un blocage, il fallait connaître et taper les numéros.
+
+### Critères d'acceptation (8)
+
+#### B8.1 · Les bloquants d'un ticket — `listeDesBloquants(ticket, tickets)`
+
+Renvoie, dans l'ordre de déclaration, `[{ id, titre, statut, termine }]` pour chaque bloquant ; un numéro inconnu est ignoré.
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | #2 bloqué par `[4, 6, 99]`, #6 terminé | `[{ id: 4, …, termine: false }, { id: 6, …, termine: true }]` (99 ignoré) |
+| b | aucun bloquant | `[]` |
+
+#### B8.2 · Le badge 🔒 est une liste déroulante — `htmlBloquants(ticket, tickets)`
+
+| Cas | Alors |
+|---|---|
+| a | un élément déroulant natif (`<details class="bloque">` et son `<summary>`) dont le titre dit « Bloqué par N » (N = bloquants **actifs**) |
+| b | une fois déroulé : un bouton par bloquant, « #4 Titre · Backlog », marqué « terminé » s'il l'est ; le bouton porte `data-modifier="4"` et le libellé accessible « Ouvrir le ticket #4 » |
+| c | aucun bloquant actif → pas de badge (comme B2.5) |
+
+#### B8.3 · Un clic sur un bloquant ouvre sa fiche
+
+Dans la liste Backlog et le Kanban, cliquer sur un bloquant ouvre la fenêtre « Modifier le ticket » de ce bloquant (même s'il est masqué par la recherche ou les filtres).
+
+#### B8.4 · Le formulaire propose les bloquants possibles — `choixDeBloquants(tickets, id)`
+
+Renvoie `[{ id, titre, statut, choisi, possible, raison }]` : tous les tickets du projet **sauf le ticket lui-même**, triés par numéro.
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | modification de #2, bloqué par `[4]` | #4 a `choisi: true`, les autres `false` ; #2 n'est pas dans la liste |
+| b | nouveau ticket (`id` = `null`) | tous les tickets, tous `possible: true`, aucun choisi |
+
+#### B8.5 · Les choix qui créeraient un cycle sont grisés, avec le cycle
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | #1 → #2 ; on modifie #2 | #1 : `possible: false`, `raison: 'Cycle refusé␣: #2 → #1 → #2'` (le message de B2.3) |
+| b | #1 → #3 → #2 (chaîne) ; on modifie #2 | #1 et #3 grisés ; les autres possibles |
+| c | un bloquant déjà choisi | toujours `possible: true` (il peut être décoché) |
+
+#### B8.6 · Le résumé de la liste — `resumeDesBloquantsChoisis(numeros)`
+
+| Cas | Alors |
+|---|---|
+| a | `[]` → `Aucun` |
+| b | `[4]` → `1 ticket : #4` |
+| c | `[4, 6]` → `2 tickets : #4, #6` |
+
+Le résumé se met à jour à chaque case cochée. À l'enregistrement, les règles de B2 (`definirBloquants`) s'appliquent toujours.
+
+#### B8.7 · Clavier et lecteur d'écran (vérifié à la main)
+
+Les deux listes s'ouvrent au clavier (Entrée, Espace) ; dans le formulaire, chaque case a pour libellé « #4 Titre · Colonne » ; un choix grisé indique pourquoi (le cycle).
+
+#### B8.8 · Rien d'autre ne change
+
+Mêmes données, même sauvegarde (v7) ; mêmes règles R6 et B2 ; le badge reste absent quand rien ne bloque.
+
+### Hors périmètre
+
+- Rechercher dans la liste du formulaire (elle défile ; la liste est triée par numéro).
+- Afficher le badge dans la vue Sprints ou le Calendrier.
+
+### Impacts sur l'existant
+
+- Le champ texte « Bloqué par » du formulaire (B2.8) est remplacé par la liste déroulante.
+- `htmlBloquants` reçoit les tickets en paramètre (elle est exposée pour les tests).
