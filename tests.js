@@ -24,6 +24,8 @@
     definirBloquants, bloquantsActifs, retirerDesBloquants,
     // B3 · Échéances et calendrier (docs/spec.md)
     urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
+    // B5 · Kanban du sprint en cours (docs/spec.md)
+    sprintsEnCours, ticketsDuKanban,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
@@ -42,7 +44,7 @@
      T12 : annuler n’importe lequel des 10 derniers déplacements.
      T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
      T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
-     T45 à T47 : B4 disposition de l’écran (structure de la page).
+     T45 à T47 : B4 disposition de l’écran (structure de la page). T48 à T53 : B5 Kanban du sprint en cours.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
@@ -1056,11 +1058,105 @@
         ['B4.2c : sur un écran étroit, l’ordre du document est filtres, vues, déplacements', !!espace && avant(espace.querySelector('.filtres'), vues[0]) && avant(vues[3], espace.querySelector('.journal'))],
         ['B4.3 : recherche et « + Ajouter » au-dessus de l’espace de travail (communs aux 4 vues)', !!espace && avant(document.getElementById('recherche'), espace) && avant(document.getElementById('btn-ajouter'), espace)]
       ], () => JSON.stringify({ largeur: app && getComputedStyle(app).maxWidth, espace: !!espace }), 'Contenu jusqu’à 1 600 px ; barre d’actions au-dessus ; filtres et déplacements à côté de la vue');
+    } },
+
+    /* ---------- B5 · Le Kanban affiche le sprint en cours (docs/spec.md) ---------- */
+
+    { code: 'T48', groupe: 'b5', nom: 'B5.1 · sprints en cours : ouverts et commencés (même après leur fin), ni à venir ni clôturés', executer() {
+      const manquantes = absentes({ sprintsEnCours });
+      if (manquantes.length) return testAbsent(manquantes);
+      const s = (id, debut, fin, statut = 'ouvert') => sprintDeTest(id, 20, { debut, fin, statut, ...(statut === 'cloture' ? { bilan: { engage: 0, termine: 0, restant: 0 }, clotureLe: fin } : {}) });
+      const sprints = gelerEnProfondeur([s(1, '2026-11-02', '2026-11-13'), s(2, '2026-11-04', '2026-11-17'), s(3, '2026-11-05', '2026-11-18'), s(4, '2026-10-20', '2026-10-31'), s(5, '2026-10-01', '2026-10-14', 'cloture')]);
+      const ids = liste => (Array.isArray(liste) ? liste.map(sprint => sprint.id) : liste);
+      const enCours = essayer(() => ids(sprintsEnCours(sprints, '2026-11-04')));
+      const aucun = essayer(() => ids(sprintsEnCours(gelerEnProfondeur([s(3, '2026-11-05', '2026-11-18'), s(5, '2026-10-01', '2026-10-14', 'cloture')]), '2026-11-04')));
+      return bilanDesEtapes([
+        ['B5.1a : ouvert, commencé le 2 → en cours', Array.isArray(enCours) && enCours.includes(1)],
+        ['B5.1b : commence aujourd’hui → en cours', Array.isArray(enCours) && enCours.includes(2)],
+        ['B5.1c : commence demain → pas en cours', Array.isArray(enCours) && !enCours.includes(3)],
+        ['B5.1d : fin passée mais pas clôturé → en cours', Array.isArray(enCours) && enCours.includes(4)],
+        ['B5.1e : clôturé → pas en cours', Array.isArray(enCours) && !enCours.includes(5)],
+        ['B5.1f : tous, dans l’ordre reçu : [1, 2, 4] ; aucun → []', JSON.stringify(enCours) === '[1,2,4]' && JSON.stringify(aucun) === '[]']
+      ], () => JSON.stringify({ enCours, aucun }), 'En cours : commencés et ouverts (y compris fin dépassée) ; à venir et clôturés exclus');
+    } },
+
+    { code: 'T49', groupe: 'b5', nom: 'B5.2 · pendant un sprint, le Kanban n’a que les tickets du sprint (terminés compris)', executer() {
+      const manquantes = absentes({ ticketsDuKanban });
+      if (manquantes.length) return testAbsent(manquantes);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13' })]);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNE_BACKLOG.id, 3), ticketDeTest(3, COLONNES[1].id, 2, 1), ticketDeTest(2, COLONNES[1].id, 5), ticketDeTest(4, COLONNES[2].id, 3, 1), ticketDeTest(5, DERNIERE.id, 1, 1)]);
+      const kanban = essayer(() => ticketsDuKanban(tickets, sprints, '2026-11-04'));
+      return bilanDesEtapes([
+        ['B5.2a : tickets #3, #4, #5 (le terminé compris), dans l’ordre reçu', Array.isArray(kanban.tickets) && JSON.stringify(kanban.tickets.map(ticket => ticket.id)) === '[3,4,5]'],
+        ['B5.2a : les tickets affichés sont ceux reçus (mêmes objets)', Array.isArray(kanban.tickets) && kanban.tickets.every(ticket => tickets.includes(ticket))],
+        ['B5.2a : 2 tickets laissés au Backlog', kanban.horsSprint === 2],
+        ['B5.2a : le sprint en cours est renvoyé', Array.isArray(kanban.sprints) && JSON.stringify(kanban.sprints.map(sprint => sprint.id)) === '[1]']
+      ], () => JSON.stringify({ tickets: kanban.tickets && kanban.tickets.map(ticket => ticket.id), horsSprint: kanban.horsSprint, sprints: kanban.sprints && kanban.sprints.map(sprint => sprint.id), exception: kanban.exception }),
+      'Kanban : #3, #4, #5 ; 2 tickets au Backlog');
+    } },
+
+    { code: 'T50', groupe: 'b5', nom: 'B5.2 · un ticket d’un sprint clôturé n’est pas affiché ; tableau reçu intact', executer() {
+      const manquantes = absentes({ ticketsDuKanban });
+      if (manquantes.length) return testAbsent(manquantes);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13' }),
+        sprintDeTest(2, 20, { debut: '2026-10-19', fin: '2026-10-30', statut: 'cloture', bilan: { engage: 3, termine: 3, restant: 0 }, clotureLe: '2026-10-30' })]);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 1), ticketDeTest(2, DERNIERE.id, 3, 2), ticketDeTest(3, COLONNES[1].id, 2)]);
+      const copieAvant = JSON.stringify(tickets);
+      const kanban = essayer(() => ticketsDuKanban(tickets, sprints, '2026-11-04'));
+      return bilanDesEtapes([
+        ['B5.2b : #2 (sprint clôturé) n’est pas affiché, seul #1 l’est', Array.isArray(kanban.tickets) && JSON.stringify(kanban.tickets.map(ticket => ticket.id)) === '[1]' && kanban.horsSprint === 2],
+        ['B5.2c : tableau reçu intact', JSON.stringify(tickets) === copieAvant]
+      ], () => JSON.stringify({ tickets: kanban.tickets && kanban.tickets.map(ticket => ticket.id), horsSprint: kanban.horsSprint, exception: kanban.exception }), 'Ticket d’un sprint clôturé laissé au Backlog');
+    } },
+
+    { code: 'T51', groupe: 'b5', nom: 'B5.3 · sans sprint en cours, le Kanban affiche tout, comme avant', executer() {
+      const manquantes = absentes({ ticketsDuKanban });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNE_BACKLOG.id, 3), ticketDeTest(2, COLONNES[1].id, 5, 1), ticketDeTest(3, DERNIERE.id, 2, 2)]);
+      const cas = {
+        aucun: [],
+        aVenir: [sprintDeTest(1, 20, { debut: '2026-11-10', fin: '2026-11-20' })],
+        cloture: [sprintDeTest(2, 20, { debut: '2026-10-01', fin: '2026-10-14', statut: 'cloture', bilan: { engage: 2, termine: 2, restant: 0 }, clotureLe: '2026-10-14' })]
+      };
+      const resultats = Object.fromEntries(Object.entries(cas).map(([nom, sprints]) => [nom, essayer(() => ticketsDuKanban(tickets, gelerEnProfondeur(sprints), '2026-11-04'))]));
+      const tout = resultat => Array.isArray(resultat.tickets) && resultat.tickets.length === tickets.length && resultat.tickets.every((ticket, rang) => ticket === tickets[rang])
+        && Array.isArray(resultat.sprints) && resultat.sprints.length === 0 && resultat.horsSprint === 0;
+      return bilanDesEtapes([
+        ['B5.3a : aucun sprint → tous les tickets, aucun sprint, 0 hors sprint', tout(resultats.aucun)],
+        ['B5.3a : sprint pas encore commencé → tous les tickets', tout(resultats.aVenir)],
+        ['B5.3a : sprint clôturé seulement → tous les tickets', tout(resultats.cloture)]
+      ], () => JSON.stringify(Object.fromEntries(Object.entries(resultats).map(([nom, r]) => [nom, { tickets: r.tickets && r.tickets.map(t => t.id), sprints: r.sprints && r.sprints.length, horsSprint: r.horsSprint, exception: r.exception }]))),
+      'Sans sprint en cours : Kanban identique à avant');
+    } },
+
+    { code: 'T52', groupe: 'b5', nom: 'B5.4 · deux sprints en cours : le Kanban réunit leurs tickets', executer() {
+      const manquantes = absentes({ ticketsDuKanban });
+      if (manquantes.length) return testAbsent(manquantes);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13' }), sprintDeTest(2, 20, { debut: '2026-11-03', fin: '2026-11-10' })]);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 1), ticketDeTest(2, COLONNES[1].id, 5, 2), ticketDeTest(3, COLONNES[1].id, 2)]);
+      const kanban = essayer(() => ticketsDuKanban(tickets, sprints, '2026-11-04'));
+      return bilanDesEtapes([
+        ['B5.4a : tickets des sprints A et B (#1, #2), #3 au Backlog', Array.isArray(kanban.tickets) && JSON.stringify(kanban.tickets.map(ticket => ticket.id)) === '[1,2]' && kanban.horsSprint === 1],
+        ['B5.4a : les deux sprints sont renvoyés', Array.isArray(kanban.sprints) && kanban.sprints.length === 2]
+      ], () => JSON.stringify({ tickets: kanban.tickets && kanban.tickets.map(ticket => ticket.id), horsSprint: kanban.horsSprint, exception: kanban.exception }), 'Sprints A et B réunis dans le Kanban');
+    } },
+
+    { code: 'T53', groupe: 'b5', nom: 'B5.5 · la date du jour décide : la veille du début tout s’affiche, le jour du début seulement le sprint', executer() {
+      const manquantes = absentes({ ticketsDuKanban });
+      if (manquantes.length) return testAbsent(manquantes);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-16', fin: '2026-11-27' })]);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 1), ticketDeTest(2, COLONNES[1].id, 5), ticketDeTest(3, COLONNE_BACKLOG.id, 2)]);
+      const veille = essayer(() => ticketsDuKanban(tickets, sprints, '2026-11-15'));
+      const jourJ = essayer(() => ticketsDuKanban(tickets, sprints, '2026-11-16'));
+      return bilanDesEtapes([
+        ['B5.5a : la veille (15 nov.) → les 3 tickets', Array.isArray(veille.tickets) && veille.tickets.length === 3 && veille.horsSprint === 0],
+        ['B5.5b : le jour du début (16 nov.) → seulement #1', Array.isArray(jourJ.tickets) && JSON.stringify(jourJ.tickets.map(ticket => ticket.id)) === '[1]' && jourJ.horsSprint === 2]
+      ], () => JSON.stringify({ veille: veille.tickets && veille.tickets.map(t => t.id), jourJ: jourJ.tickets && jourJ.tickets.map(t => t.id), exception: veille.exception || jourJ.exception }), 'Veille : tout ; jour J : le sprint seulement');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
