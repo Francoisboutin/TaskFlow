@@ -236,7 +236,8 @@
   //   → { ok: true,  tickets: nouveauTableau }
   //   → { ok: false, erreur: "WIP atteint (3/3)" }
   function deplacerTicket(tickets, id, versStatut) {
-    if (!Array.isArray(tickets)) return { ok: false, erreur: 'Liste de tickets invalide' };
+    // Pas un tableau, ou un élément vide (null, undefined) : refus, plutôt qu’une exception plus loin
+    if (!Array.isArray(tickets) || tickets.some(element => !element)) return { ok: false, erreur: 'Liste de tickets invalide' };
     const ticket = tickets.find(element => element && element.id === id);
     if (!ticket) return { ok: false, erreur: `Ticket introuvable (id ${id})` };
     const colonneCible = COLONNES.find(colonne => colonne.id === versStatut);
