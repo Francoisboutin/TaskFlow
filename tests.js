@@ -42,6 +42,7 @@
      T12 : annuler n’importe lequel des 10 derniers déplacements.
      T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
      T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
+     T45 à T47 : B4 disposition de l’écran (structure de la page).
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
@@ -1012,11 +1013,54 @@
         ['B3.7f : export CSV et JSON sans echeance', enteteCsv === 'id;titre;type;priorite;points;statut;creeLe;assigne' && Array.isArray(json) && !('echeance' in json[0])],
         ['B3.7g : import → echeance null, colonne signalée « hors du modèle, ignorée »', analyse.ok && analyse.colonnesIgnorees.includes('echeance') && importes.length === 1 && importes[0].echeance === null]
       ], () => JSON.stringify({ enteteCsv, json: json[0], ignorees: analyse.colonnesIgnorees, importes }), 'Export sans échéance ; import : colonne ignorée et signalée');
+    } },
+
+    /* ---------- B4 · Disposition de l’écran (docs/spec.md) ----------
+       Tests de structure : ils lisent la page sans rien y changer. La disposition visuelle
+       (colonne latérale, largeurs) est vérifiée par captures d’écran lors de la contre-vérification. */
+
+    { code: 'T45', groupe: 'b4', nom: 'B4.1 · Sprints est une vue : 4 onglets dans l’ordre du travail, panneau d’onglet, plus de section hors des vues', executer() {
+      const onglets = [...document.querySelectorAll('[role="tablist"] [data-vue]')].map(onglet => onglet.dataset.vue);
+      const panneau = document.getElementById('vue-sprints');
+      const sectionsHorsVues = [...document.querySelectorAll('section.sprints')].filter(section => !section.closest('[role="tabpanel"]'));
+      return bilanDesEtapes([
+        ['B4.1a : onglets Backlog, Sprints, Kanban, Calendrier, dans cet ordre', JSON.stringify(onglets) === '["backlog","sprints","kanban","calendrier"]'],
+        ['B4.1b : #vue-sprints est un panneau d’onglet relié à son onglet', !!panneau && panneau.getAttribute('role') === 'tabpanel' && panneau.getAttribute('aria-labelledby') === 'onglet-sprints'
+          && !!document.querySelector('#onglet-sprints[aria-controls="vue-sprints"]')],
+        ['B4.1b : le contenu Sprints (bouton « Nouveau sprint », burndown) est dans ce panneau', !!panneau && !!panneau.querySelector('#btn-nouveau-sprint') && !!panneau.querySelector('#burndown')],
+        ['B4.1b : aucune section Sprints hors des vues', sectionsHorsVues.length === 0]
+      ], () => JSON.stringify({ onglets, panneau: panneau ? panneau.outerHTML.slice(0, 120) : null, sectionsHorsVues: sectionsHorsVues.length }), 'Backlog · Sprints · Kanban · Calendrier ; Sprints dans son propre panneau');
+    } },
+
+    { code: 'T46', groupe: 'b4', nom: 'B4.1 · la vue « sprints » est sauvegardée et relue ; une vue inconnue redevient « backlog »', executer() {
+      const etatAvecVue = vue => ({ projets: [{ id: 1, nom: 'Projet', tickets: gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3)]), ordreManuel: null, notesImport: {}, journal: [], sprints: [] }],
+        projetActifId: 1, prochainIdTicket: 2, prochainIdProjet: 2, numerosAttribues: new Set([1]), vue, tri: triParDefaut(), filtres: filtresVides(), utilisateur: '' });
+      const relue = vue => { const resultat = charger(JSON.stringify(enveloppeDeSauvegarde(etatAvecVue(vue)))); return resultat.donnees ? resultat.donnees.vue : `(${resultat.origine})`; };
+      const vues = ['backlog', 'sprints', 'kanban', 'calendrier', 'inconnue'].map(vue => [vue, relue(vue)]);
+      return bilanDesEtapes([
+        ['B4.1c : « sprints » relue « sprints »', relue('sprints') === 'sprints'],
+        ['B4.1c : « backlog », « kanban », « calendrier » toujours relues telles quelles', relue('backlog') === 'backlog' && relue('kanban') === 'kanban' && relue('calendrier') === 'calendrier'],
+        ['B4.1c : une vue inconnue redevient « backlog »', relue('inconnue') === 'backlog']
+      ], () => JSON.stringify(vues), 'Les 4 vues sont retrouvées au rechargement ; inconnue → backlog');
+    } },
+
+    { code: 'T47', groupe: 'b4', nom: 'B4.2 et B4.3 · écran élargi (1 600 px), barre d’actions commune, espace de travail : filtres et déplacements à côté de la vue', executer() {
+      const app = document.querySelector('.app');
+      const espace = document.querySelector('.espace');
+      const avant = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const vues = ['vue-backlog', 'vue-sprints', 'vue-kanban', 'vue-calendrier'].map(id => document.getElementById(id));
+      return bilanDesEtapes([
+        ['B4.2a : largeur maximale du contenu = 1 600 px', !!app && getComputedStyle(app).maxWidth === '1600px'],
+        ['B4.2b : un espace de travail contient les filtres, les 4 vues et les derniers déplacements', !!espace && !!espace.querySelector('.filtres') && !!espace.querySelector('.journal')
+          && vues.every(vue => !!vue && espace.contains(vue))],
+        ['B4.2c : sur un écran étroit, l’ordre du document est filtres, vues, déplacements', !!espace && avant(espace.querySelector('.filtres'), vues[0]) && avant(vues[3], espace.querySelector('.journal'))],
+        ['B4.3 : recherche et « + Ajouter » au-dessus de l’espace de travail (communs aux 4 vues)', !!espace && avant(document.getElementById('recherche'), espace) && avant(document.getElementById('btn-ajouter'), espace)]
+      ], () => JSON.stringify({ largeur: app && getComputedStyle(app).maxWidth, espace: !!espace }), 'Contenu jusqu’à 1 600 px ; barre d’actions au-dessus ; filtres et déplacements à côté de la vue');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
