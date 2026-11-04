@@ -20,6 +20,8 @@
     modifierTicket, ticketsEnCsv, ticketsEnJson, analyserFichier,
     // B1 · Sprints et burndown (docs/spec.md)
     nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
+    // B2 · Dépendances et blocages (docs/spec.md)
+    definirBloquants, bloquantsActifs, retirerDesBloquants,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
@@ -36,14 +38,15 @@
      T10, T11 : demandes du Product Owner (colonne « En revue », passage obligé,
      champ « assigne » et migration v2 → v3, journal et « Annuler »).
      T12 : annuler n’importe lequel des 10 derniers déplacements.
-     T13 à T15 : audit des cas limites. T16 à T27 : B1 sprints et burndown.
+     T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
+     T29 à T36 : B2 dépendances et blocages.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
     return Object.freeze(objet);
   }
-  // Un ticket au modèle exact (9 champs depuis B1 : sprintId en dernier)
-  const ticketDeTest = (id, statut, points, sprintId = null) => ({ id, titre: `Ticket de test ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: null, sprintId });
+  // Un ticket au modèle exact (10 champs depuis B2 : sprintId, puis bloquePar en dernier)
+  const ticketDeTest = (id, statut, points, sprintId = null, bloquePar = []) => ({ id, titre: `Ticket de test ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: null, sprintId, bloquePar });
   const LIMITE_WIP = COLONNE_LIMITEE ? COLONNE_LIMITEE.wip : 0;
   const COLONNE_SUIVANTE = COLONNES[1];
   const estPleineSelonLesStats = tickets => calculerStats(tickets).colonnes.find(colonne => colonne.id === COLONNE_LIMITEE.id).plein;
@@ -227,7 +230,7 @@
       const relu = charger(JSON.stringify(enveloppeDeSauvegarde(etatTest)));
       const v1 = charger(JSON.stringify([{ id: 4, titre: 'Ticket écrit par la version 1' }, { titre: 'Sans numéro', points: 5 }]));
       const ticketV1 = v1.donnees && v1.donnees.projets[0].tickets[0];
-      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId';   // B1 : 9e champ sprintId
+      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar';   // B1 : sprintId ; B2 : bloquePar
       const etapes = [
         ['premier lancement (rien d’enregistré) → démonstration', charger(null).origine === 'premier-lancement' && charger(null).donnees === null],
         ['« {oups » (donnée corrompue) → démonstration, sans exception', charger('{oups').origine === 'illisible' && charger('{oups').donnees === null],
@@ -288,7 +291,7 @@
       const identique = resultat => resultat.ok && resultat.exact && JSON.stringify(resultat.tickets) === JSON.stringify(avant.tickets.map(construireTicket)) && JSON.stringify(resultat.ordreManuel) === '[2,1]';
       const etapes = [
         ['sauvegarde v2 → migrée en v3, sans erreur', lu.origine === 'migration-v2' && tickets.length === 2],
-        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.7c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId' && ticket.sprintId === null) && tickets[0].statut === 'termine'],
+        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.7c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar' && ticket.sprintId === null && Array.isArray(ticket.bloquePar) && ticket.bloquePar.length === 0) && tickets[0].statut === 'termine'],
         ['« Annuler » rend exactement l’état d’avant (tickets et ordre)', identique(annule) && annule.journal.length === 0],
         ['… y compris après rechargement (journal sauvegardé)', relu.origine === 'sauvegarde' && identique(annuleApresF5) && relu.donnees.utilisateur === 'Camille'],
         ['journal limité aux 10 derniers déplacements', Array.from({ length: 14 }).reduce(liste => journaliser(liste, { id: 1 }), []).length === JOURNAL_MAX],
@@ -669,16 +672,16 @@
       const v3 = charger(JSON.stringify({ version: 3, tickets: [ticketV3], projets: [{ id: 1, nom: 'Hier', tickets: [1], ordreManuel: null, notesImport: {}, journal: [] }], projetActif: 1,
         compteurs: { prochainTicket: 2, prochainProjet: 2, numerosAttribues: [1] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
       // v4 abîmée : sprints invalides (dates, capacité, durée), sprintId inconnu, ticket non estimé dans un sprint ouvert
-      const abimee = charger(JSON.stringify({ version: 4,
+      const abimee = charger(JSON.stringify({ version: VERSION_SAUVEGARDE,          // la version actuelle, abîmée
         tickets: [ticketDeTest(1, COLONNES[1].id, 3, 1), ticketDeTest(2, COLONNES[1].id, 3, 99), ticketDeTest(3, COLONNES[1].id, 3, 2), ticketDeTest(4, COLONNE_BACKLOG.id, null, 1),
           ticketDeTest(5, COLONNES[1].id, 3, 3), ticketDeTest(6, COLONNES[1].id, 3, 4)],
         projets: [{ id: 1, nom: 'Abîmé', tickets: [1, 2, 3, 4, 5, 6], ordreManuel: null, notesImport: {}, journal: [],
           sprints: [sprintDeTest(1, 20), sprintDeTest(2, 20, { debut: '2026-02-30' }), sprintDeTest(3, 0), sprintDeTest(4, 20, { debut: '2026-01-01', fin: '2026-03-01' })] }],
         projetActif: 1, compteurs: { prochainTicket: 7, prochainProjet: 2, numerosAttribues: [1, 2, 3, 4, 5, 6] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
       const projetAbime = abimee.donnees && abimee.donnees.projets[0];
-      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId';
+      const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId,bloquePar';
       return bilanDesEtapes([
-        ['VERSION_SAUVEGARDE vaut 4', VERSION_SAUVEGARDE === 4],
+        ['VERSION_SAUVEGARDE vaut au moins 4 (B1)', VERSION_SAUVEGARDE >= 4],
         ['B1.7a : aller-retour → origine « sauvegarde », tickets (sprintId compris) identiques', relu.origine === 'sauvegarde' && !!projetRelu && JSON.stringify(projetRelu.tickets) === JSON.stringify(projet.tickets)],
         ['B1.7a : sprints (relevés, bilan, statut) identiques', !!projetRelu && jsonTrie(projetRelu.sprints) === jsonTrie(projet.sprints)],
         ['B1.7b : sauvegarde v3 → « migration-v3 », sprintId null, sprints []', v3.origine === 'migration-v3' && !!v3.donnees && Object.keys(v3.donnees.projets[0].tickets[0]).join(',') === cles
@@ -686,7 +689,7 @@
         ['B1.7d : sprints aux dates, capacité ou durée invalides écartés ; seul le sprint 1 reste', abimee.origine === 'sauvegarde' && !!projetAbime && JSON.stringify(projetAbime.sprints.map(element => element.id)) === '[1]'],
         ['B1.7d : #1 garde son sprint ; sprint inconnu, écarté ou ticket non estimé → sprintId null', !!projetAbime && ticketParId(projetAbime.tickets, 1).sprintId === 1
           && [2, 3, 4, 5, 6].every(id => ticketParId(projetAbime.tickets, id) && ticketParId(projetAbime.tickets, id).sprintId === null)],
-        ['B1.7e : version 5 → « version-inconnue »', charger('{"version":5,"tickets":[],"projets":[]}').origine === 'version-inconnue']
+        [`B1.7e : version ${VERSION_SAUVEGARDE + 1} (plus récente) → « version-inconnue »`, charger(`{"version":${VERSION_SAUVEGARDE + 1},"tickets":[],"projets":[]}`).origine === 'version-inconnue']
       ], () => JSON.stringify({ relu: relu.origine, sprintsRelus: projetRelu && projetRelu.sprints, v3: v3.origine, abimee: abimee.origine, sprintsAbimes: projetAbime && projetAbime.sprints.map(element => element.id),
         ticketsAbimes: projetAbime && projetAbime.tickets.map(ticket => [ticket.id, ticket.sprintId]) }), 'v4 : aller-retour identique ; v3 migrée (sprintId null, sprints []) ; sauvegarde abîmée réparée ; v5 inconnue');
     } },
@@ -706,11 +709,164 @@
         ['B1.7g : colonne sprintId signalée « hors du modèle, ignorée » (JSON et CSV)', analyseJson.ok && analyseJson.colonnesIgnorees.includes('sprintId') && analyseCsv.ok && analyseCsv.colonnesIgnorees.includes('sprintId')],
         ['B1.7g : tickets importés avec sprintId null', [analyseJson, analyseCsv].every(analyse => { const importes = importe(analyse); return importes.length === 1 && importes[0].sprintId === null; })]
       ], () => JSON.stringify({ enteteCsv, json: json[0], ignoreesJson: analyseJson.colonnesIgnorees, importes: [...importe(analyseJson), ...importe(analyseCsv)] }), 'Export sans sprintId ; à l’import, sprintId ignoré et signalé, tickets hors sprint');
+    } },
+
+    /* ---------- B2 · Dépendances et blocages (docs/spec.md) ---------- */
+
+    { code: 'T29', groupe: 'b2', nom: 'B2.1 · déclarer les bloquants : liste, doublons, vider, ticket déjà en cours, modifierTicket les ignore', executer() {
+      const manquantes = absentes({ definirBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1), ticketDeTest(4, COLONNES[2].id, 5, null, [2])]);
+      const copieAvant = JSON.stringify(depart);
+      const a = essayer(() => definirBloquants(depart, 1, [2, 3]));
+      const b = essayer(() => definirBloquants(depart, 1, [3, 2, 3]));
+      const c = essayer(() => definirBloquants(depart, 4, []));
+      const d = essayer(() => definirBloquants(depart, 4, [2, 3]));                         // #4 est déjà « En cours »
+      const e = essayer(() => modifierTicket(depart, 4, { bloquePar: [9], titre: 'Titre modifié' }));
+      return bilanDesEtapes([
+        ['B2.1a : #1 bloqué par [2, 3] ; seul #1 change ; tableau reçu intact', a.ok === true && JSON.stringify(ticketParId(a.tickets, 1).bloquePar) === '[2,3]'
+          && a.tickets !== depart && JSON.stringify(depart) === copieAvant && [2, 3, 4].every(id => ticketParId(a.tickets, id) === ticketParId(depart, id))],
+        ['B2.1b : [3, 2, 3] → [3, 2] (doublon retiré, ordre gardé)', b.ok === true && JSON.stringify(ticketParId(b.tickets, 1).bloquePar) === '[3,2]'],
+        ['B2.1c : [] → #4 n’est plus bloqué', c.ok === true && JSON.stringify(ticketParId(c.tickets, 4).bloquePar) === '[]'],
+        ['B2.1d : ticket déjà en cours : bloquants acceptés, il reste en cours', d.ok === true && ticketParId(d.tickets, 4).statut === COLONNES[2].id && JSON.stringify(ticketParId(d.tickets, 4).bloquePar) === '[2,3]'],
+        ['B2.1e : modifierTicket ignore bloquePar (le titre change, pas les bloquants)', e.ok === true && e.ticket.titre === 'Titre modifié' && JSON.stringify(e.ticket.bloquePar) === '[2]']
+      ], () => JSON.stringify({ a, b, c: c.ok || c.erreur, d: d.ok || d.erreur, e: e.ticket || e.erreurs || e.exception }), 'Bloquants déclarés, dédoublonnés, vidés ; ticket en cours accepté ; modifierTicket sans effet sur eux');
+    } },
+
+    { code: 'T30', groupe: 'b2', nom: 'B2.2 · refuser une déclaration impossible : ticket ou bloquant inconnu, liste invalide', executer() {
+      const manquantes = absentes({ definirBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3), ticketDeTest(2, COLONNES[1].id, 2)]);
+      const ticketInconnu = essayer(() => definirBloquants(depart, 99, [2]));
+      const bloquantInconnu = essayer(() => definirBloquants(depart, 1, [2, 99]));
+      const pasUneListe = essayer(() => definirBloquants(depart, 1, '2'));
+      const pasDesNumeros = essayer(() => definirBloquants(depart, 1, [1.5]));
+      const listeAbimee = essayer(() => definirBloquants(gelerEnProfondeur([null, ticketDeTest(1, COLONNES[1].id, 3)]), 1, []));
+      return bilanDesEtapes([
+        ['B2.2a : ticket 99 → « Ticket introuvable (id 99) »', ticketInconnu.ok === false && ticketInconnu.erreur === 'Ticket introuvable (id 99)'],
+        ['B2.2b : bloquant 99 → « Ticket bloquant introuvable (id 99) »', bloquantInconnu.ok === false && bloquantInconnu.erreur === 'Ticket bloquant introuvable (id 99)'],
+        ['B2.2c : « 2 » ou [1.5] → « Liste de bloquants invalide »', pasUneListe.ok === false && pasUneListe.erreur === 'Liste de bloquants invalide' && pasDesNumeros.ok === false && pasDesNumeros.erreur === 'Liste de bloquants invalide'],
+        ['B2.2d : élément vide → « Liste de tickets invalide », sans exception', listeAbimee.ok === false && listeAbimee.erreur === 'Liste de tickets invalide']
+      ], () => JSON.stringify({ ticketInconnu, bloquantInconnu, pasUneListe, pasDesNumeros, listeAbimee }), 'Ticket et bloquant inconnus, liste invalide, liste abîmée : refus clairs');
+    } },
+
+    { code: 'T31', groupe: 'b2', nom: 'B2.3 · cycles refusés avec le cycle affiché (A → B → C → A, à deux, sur soi-même) ; losange accepté', executer() {
+      const manquantes = absentes({ definirBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const chaine = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(3, COLONNES[1].id, 1), ticketDeTest(4, COLONNES[1].id, 1)]);
+      const copieAvant = JSON.stringify(chaine);
+      const a = essayer(() => definirBloquants(chaine, 3, [1]));
+      const b = essayer(() => definirBloquants(gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2]), ticketDeTest(2, COLONNES[1].id, 2)]), 2, [1]));
+      const c = essayer(() => definirBloquants(chaine, 4, [4]));
+      const d = essayer(() => definirBloquants(gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2, 3]), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1)]), 2, [3]));
+      const e = essayer(() => definirBloquants(chaine, 3, [4, 1]));
+      return bilanDesEtapes([
+        ['B2.3a : #3 bloqué par #1 → « Cycle refusé : #3 → #1 → #2 → #3 », rien ne change', a.ok === false && a.erreur === `Cycle refusé${NBSP}: #3 → #1 → #2 → #3` && JSON.stringify(chaine) === copieAvant],
+        ['B2.3b : cycle à deux → « Cycle refusé : #2 → #1 → #2 »', b.ok === false && b.erreur === `Cycle refusé${NBSP}: #2 → #1 → #2`],
+        ['B2.3c : #4 bloqué par lui-même → « Cycle refusé : #4 → #4 »', c.ok === false && c.erreur === `Cycle refusé${NBSP}: #4 → #4`],
+        ['B2.3d : losange (#1 → #2, #1 → #3, puis #2 → #3) accepté', d.ok === true && JSON.stringify(ticketParId(d.tickets, 2).bloquePar) === '[3]'],
+        ['B2.3e : [4, 1] → le cycle par #1 est signalé', e.ok === false && e.erreur === `Cycle refusé${NBSP}: #3 → #1 → #2 → #3`]
+      ], () => JSON.stringify({ a, b, c, d: d.ok || d.erreur, e }), `« ${a.erreur} » ; « ${b.erreur} » ; « ${c.erreur} » ; losange accepté`);
+    } },
+
+    { code: 'T32', groupe: 'b2', nom: 'B2.4 · R6 : un ticket bloqué n’entre ni en cours ni au-delà ; reculer reste permis ; ordre des règles', executer() {
+      const [AFAIRE, ENCOURS, ENREVUE] = [COLONNES[1].id, COLONNES[2].id, COLONNES[3].id];
+      const deplacer = (tickets, id, vers) => essayer(() => deplacerTicket(gelerEnProfondeur(tickets), id, vers));
+      const a = deplacer([ticketDeTest(2, AFAIRE, 3, null, [3, 5]), ticketDeTest(3, AFAIRE, 2), ticketDeTest(5, DERNIERE.id, 1)], 2, ENCOURS);
+      const b = deplacer([ticketDeTest(2, AFAIRE, 3, null, [3, 4]), ticketDeTest(3, AFAIRE, 2), ticketDeTest(4, AFAIRE, 1)], 2, ENREVUE);
+      const dejaEnCours = [ticketDeTest(2, ENCOURS, 3, null, [3]), ticketDeTest(3, AFAIRE, 2)];
+      const cAvance = deplacer(dejaEnCours, 2, ENREVUE);
+      const cRecule = deplacer(dejaEnCours, 2, AFAIRE);
+      const cBacklog = deplacer(dejaEnCours, 2, COLONNE_BACKLOG.id);
+      const d = deplacer([ticketDeTest(2, AFAIRE, 3, null, [5]), ticketDeTest(5, DERNIERE.id, 1)], 2, ENCOURS);
+      const e = deplacer([ticketDeTest(2, COLONNE_BACKLOG.id, 3, null, [3]), ticketDeTest(3, AFAIRE, 2)], 2, AFAIRE);
+      // Ordre : R2 avant R6 ; R6 avant R5 (passage obligé) et avant R1 (WIP)
+      const nonEstime = deplacer([ticketDeTest(2, COLONNE_BACKLOG.id, null, null, [3]), ticketDeTest(3, AFAIRE, 2)], 2, ENCOURS);
+      const versTermine = deplacer([ticketDeTest(2, AFAIRE, 3, null, [3]), ticketDeTest(3, AFAIRE, 2)], 2, DERNIERE.id);
+      const pleine = Array.from({ length: LIMITE_WIP }, (_, rang) => ticketDeTest(10 + rang, ENCOURS, 1));
+      const versPleine = deplacer([...pleine, ticketDeTest(2, AFAIRE, 3, null, [3]), ticketDeTest(3, AFAIRE, 2)], 2, ENCOURS);
+      return bilanDesEtapes([
+        ['B2.4a : #2 (bloquants #3 actif, #5 terminé) → En cours : « Bloqué : #2 attend #3 »', a.ok === false && a.erreur === `Bloqué${NBSP}: #2 attend #3`],
+        ['B2.4b : saut direct vers En revue : « Bloqué : #2 attend #3, #4 »', b.ok === false && b.erreur === `Bloqué${NBSP}: #2 attend #3, #4`],
+        ['B2.4c : déjà en cours → En revue refusé ; → À faire et → Backlog acceptés', cAvance.ok === false && cAvance.erreur === `Bloqué${NBSP}: #2 attend #3` && cRecule.ok === true && cBacklog.ok === true],
+        ['B2.4d : tous les bloquants terminés → En cours accepté', d.ok === true],
+        ['B2.4e : bloqué → À faire (hors zone de travail) accepté', e.ok === true],
+        ['ordre : non estimé et bloqué → Definition of Ready d’abord (R2 avant R6)', nonEstime.ok === false && /^Definition of Ready/.test(nonEstime.erreur || '')],
+        ['ordre : bloqué → Terminé : « Bloqué » (R6 avant R5) ; vers En cours pleine : « Bloqué » (R6 avant R1)', versTermine.ok === false && /^Bloqué/.test(versTermine.erreur || '') && versPleine.ok === false && /^Bloqué/.test(versPleine.erreur || '')]
+      ], () => JSON.stringify({ a, b, cAvance, cRecule: cRecule.ok || cRecule.erreur, d: d.ok || d.erreur, e: e.ok || e.erreur, nonEstime, versTermine, versPleine }), `« ${a.erreur} » ; « ${b.erreur} » ; reculer permis ; débloqué une fois les bloquants terminés`);
+    } },
+
+    { code: 'T33', groupe: 'b2', nom: 'B2.5 · bloquants actifs (badge 🔒) : non terminés, dans l’ordre, inconnus ignorés', executer() {
+      const manquantes = absentes({ bloquantsActifs });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [3, 5, 4, 99]), ticketDeTest(3, COLONNES[1].id, 2), ticketDeTest(4, COLONNES[2].id, 1), ticketDeTest(5, DERNIERE.id, 1),
+        ticketDeTest(6, COLONNES[1].id, 1, null, [5]), ticketDeTest(7, COLONNES[1].id, 1)]);
+      const actifs = essayer(() => bloquantsActifs(tickets[0], tickets));
+      return bilanDesEtapes([
+        ['B2.5a et c : #1 bloqué par [3, 5, 4, 99] → [3, 4] (#5 terminé, 99 inconnu)', JSON.stringify(actifs) === '[3,4]'],
+        ['B2.5b : bloquants tous terminés, ou aucun → []', JSON.stringify(bloquantsActifs(tickets[4], tickets)) === '[]' && JSON.stringify(bloquantsActifs(tickets[5], tickets)) === '[]']
+      ], () => JSON.stringify(actifs), 'Badge : #3 et #4 (le terminé et l’inconnu ne sont pas cités)');
+    } },
+
+    { code: 'T34', groupe: 'b2', nom: 'B2.6 · supprimer un ticket nettoie toutes les références', executer() {
+      const manquantes = absentes({ retirerDesBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [3, 2]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(4, COLONNES[1].id, 1)]);   // #3 vient d’être supprimé
+      const copieAvant = JSON.stringify(depart);
+      const nettoye = essayer(() => retirerDesBloquants(depart, 3));
+      return bilanDesEtapes([
+        ['B2.6a : #1 → [2], #2 → []', Array.isArray(nettoye) && JSON.stringify(ticketParId(nettoye, 1).bloquePar) === '[2]' && JSON.stringify(ticketParId(nettoye, 2).bloquePar) === '[]'],
+        ['B2.6a : nouveau tableau, tableau reçu intact, ticket non concerné (#4) = même objet', Array.isArray(nettoye) && nettoye !== depart && JSON.stringify(depart) === copieAvant && ticketParId(nettoye, 4) === ticketParId(depart, 4)]
+      ], () => JSON.stringify(nettoye), 'Plus aucune référence à #3 ; les autres tickets sont intacts');
+    } },
+
+    { code: 'T35', groupe: 'b2', nom: 'B2.7 · sauvegarde v5 : aller-retour, migration v4 → v5 (sprints gardés), sauvegarde abîmée réparée', executer() {
+      const projet = { id: 1, nom: 'Projet bloqué', tickets: gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2, 3]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(3, COLONNES[1].id, 1)]),
+        ordreManuel: null, notesImport: {}, journal: [], sprints: [] };
+      const etatTest = { projets: [projet], projetActifId: 1, prochainIdTicket: 4, prochainIdProjet: 2, numerosAttribues: new Set([1, 2, 3]), vue: 'backlog', tri: triParDefaut(), filtres: filtresVides(), utilisateur: '' };
+      const relu = charger(JSON.stringify(enveloppeDeSauvegarde(etatTest)));
+      // Une sauvegarde d’hier, en version 4 : des sprints, pas de bloquePar
+      const ticketV4 = (id, statut, points, sprintId) => ({ id, titre: `Ticket d’hier ${id}`, type: 'story', priorite: 2, points, statut, creeLe: '2026-11-03', assigne: 'Camille', sprintId });
+      const v4 = charger(JSON.stringify({ version: 4, tickets: [ticketV4(1, COLONNES[1].id, 3, 1), ticketV4(2, COLONNE_BACKLOG.id, 5, null)],
+        projets: [{ id: 1, nom: 'Hier', tickets: [1, 2], ordreManuel: null, notesImport: {}, journal: [], sprints: [sprintDeTest(1, 20, { releves: { '2026-11-03': 3 } })] }],
+        projetActif: 1, compteurs: { prochainTicket: 3, prochainProjet: 2, numerosAttribues: [1, 2] }, affichage: { vue: 'kanban', utilisateur: 'Camille', tri: triParDefaut(), filtres: {} } }));
+      const projetV4 = v4.donnees && v4.donnees.projets[0];
+      // v5 abîmée : bloquant inconnu, lui-même, en double, d’un autre projet ; et un cycle #1 → #2 → #3 → #1
+      const abimee = charger(JSON.stringify({ version: 5,
+        tickets: [ticketDeTest(1, COLONNES[1].id, 3, null, [99, 1, 2, 2, 5]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(3, COLONNES[1].id, 1, null, [1]), ticketDeTest(4, COLONNES[1].id, 1, null, [3]), ticketDeTest(5, COLONNES[1].id, 1)],
+        projets: [{ id: 1, nom: 'Abîmé', tickets: [1, 2, 3, 4], ordreManuel: null, notesImport: {}, journal: [], sprints: [] }, { id: 2, nom: 'Autre', tickets: [5], ordreManuel: null, notesImport: {}, journal: [], sprints: [] }],
+        projetActif: 1, compteurs: { prochainTicket: 6, prochainProjet: 3, numerosAttribues: [1, 2, 3, 4, 5] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
+      const tousAbimes = abimee.donnees ? abimee.donnees.projets.flatMap(element => element.tickets) : [];
+      const liens = id => { const ticket = ticketParId(tousAbimes, id); return ticket ? JSON.stringify(ticket.bloquePar) : 'absent'; };
+      return bilanDesEtapes([
+        ['VERSION_SAUVEGARDE vaut au moins 5', VERSION_SAUVEGARDE >= 5],
+        ['B2.7a : aller-retour → « sauvegarde », bloquePar identiques', relu.origine === 'sauvegarde' && !!relu.donnees && JSON.stringify(relu.donnees.projets[0].tickets) === JSON.stringify(projet.tickets)],
+        ['B2.7b : sauvegarde v4 → « migration-v4 », bloquePar [] partout', v4.origine === 'migration-v4' && !!projetV4 && projetV4.tickets.every(ticket => Array.isArray(ticket.bloquePar) && ticket.bloquePar.length === 0)],
+        ['B2.7b : sprints, sprintId, « Je suis » et vue conservés', !!projetV4 && projetV4.sprints.length === 1 && projetV4.sprints[0].releves['2026-11-03'] === 3 && ticketParId(projetV4.tickets, 1).sprintId === 1
+          && ticketParId(projetV4.tickets, 1).assigne === 'Camille' && v4.donnees.vue === 'kanban' && v4.donnees.utilisateur === 'Camille'],
+        ['B2.7d : #1 [99, 1, 2, 2, 5] → [2] (inconnu, lui-même, doublon, autre projet retirés)', liens(1) === '[2]'],
+        ['B2.7d : cycle #1 → #2 → #3 → #1 : le lien qui le ferme (#3 → #1) est retiré ; #4 → [3] gardé', liens(2) === '[3]' && liens(3) === '[]' && liens(4) === '[3]' && liens(5) === '[]'],
+        [`B2.7e : version ${VERSION_SAUVEGARDE + 1} → « version-inconnue »`, charger(`{"version":${VERSION_SAUVEGARDE + 1},"tickets":[],"projets":[]}`).origine === 'version-inconnue']
+      ], () => JSON.stringify({ relu: relu.origine, v4: v4.origine, sprintsV4: projetV4 && projetV4.sprints.length, abimee: abimee.origine, liens: [1, 2, 3, 4, 5].map(liens) }),
+      'v5 : aller-retour identique ; sauvegarde d’hier v4 migrée, sprints gardés ; liens invalides et cycle retirés');
+    } },
+
+    { code: 'T36', groupe: 'b2', nom: 'B2.7 · import et export : les bloquants ne sont ni exportés ni importés', executer() {
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2])]);
+      const enteteCsv = ticketsEnCsv(tickets).replace(/^﻿/, '').split(/\r?\n/)[0];
+      const json = JSON.parse(ticketsEnJson(tickets));
+      const analyse = analyserFichier('import.json', JSON.stringify([{ titre: 'Ticket avec bloquants', points: 3, bloquePar: [1, 2] }]));
+      const importes = analyse.ok ? importerTickets(analyse.lignes, [], { dateDuJour: '2026-11-04' }).importes : [];
+      return bilanDesEtapes([
+        ['B2.7f : export CSV et JSON sans bloquePar', enteteCsv === 'id;titre;type;priorite;points;statut;creeLe;assigne' && Array.isArray(json) && !('bloquePar' in json[0])],
+        ['B2.7g : import → bloquePar [] et colonne signalée « hors du modèle, ignorée »', analyse.ok && analyse.colonnesIgnorees.includes('bloquePar') && importes.length === 1
+          && Array.isArray(importes[0].bloquePar) && importes[0].bloquePar.length === 0]
+      ], () => JSON.stringify({ enteteCsv, json: json[0], ignorees: analyse.colonnesIgnorees, importes }), 'Export sans bloquePar ; import : bloquePar ignoré et signalé, tickets sans bloquant');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
