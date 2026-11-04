@@ -1,0 +1,112 @@
+[
+ [
+  "B3.1",
+  "if (!(ticket.echeance === null || dateIsoValide(ticket.echeance))) erreurs.echeance",
+  "if (false) erreurs.echeance"
+ ],
+ [
+  "B3.1",
+  "echeance: typeof donnees.echeance === 'string' && donnees.echeance.trim() ? donnees.echeance.trim() : null",
+  "echeance: donnees.echeance ?? null"
+ ],
+ [
+  "B3.2",
+  "const jours = nombreDeJours(aujourdhui, ticket.echeance) - 1;",
+  "const jours = nombreDeJours(aujourdhui, ticket.echeance);"
+ ],
+ [
+  "B3.2",
+  "if (estTermine(ticket)) return { niveau: 'terminee', jours, libelle: '' };",
+  ""
+ ],
+ [
+  "B3.2",
+  "if (jours < 0) return { niveau: 'retard', jours, libelle: 'En retard' };",
+  "if (jours <= 0) return { niveau: 'retard', jours, libelle: 'En retard' };"
+ ],
+ [
+  "B3.2",
+  "if (jours <= JOURS_PROCHES) return { niveau: 'proche', jours, libelle: `J-${jours}` };",
+  "if (jours < JOURS_PROCHES) return { niveau: 'proche', jours, libelle: `J-${jours}` };"
+ ],
+ [
+  "B3.2",
+  "if (jours === 0) return { niveau: 'aujourdhui', jours, libelle: 'Aujourd’hui' };",
+  ""
+ ],
+ [
+  "B3.3",
+  "|| (urgences.has('proche') && (niveau === 'aujourdhui' || niveau === 'proche'))",
+  "|| (urgences.has('proche') && niveau === 'proche')"
+ ],
+ [
+  "B3.3",
+  "|| (urgences.has('sans') && niveau === 'aucune');",
+  ";"
+ ],
+ [
+  "B3.3",
+  "if (a === null) return 1;",
+  "if (a === null) return sens;"
+ ],
+ [
+  "B3.3",
+  "return (a < b ? -1 : 1) * sens;",
+  "return (a < b ? -1 : 1);"
+ ],
+ [
+  "B3.3",
+  ": critere === 'echeance'",
+  ": critere === 'echeances'"
+ ],
+ [
+  "B3.4",
+  "const jourArrivee = Math.min(jour, joursDansLeMois(anneeArrivee, moisArrivee));",
+  "const jourArrivee = jour;"
+ ],
+ [
+  "B3.4",
+  "const moisArrivee = rang - anneeArrivee * 12 + 1;",
+  "const moisArrivee = rang - anneeArrivee * 12;"
+ ],
+ [
+  "B3.5",
+  "const moisValide = mois => typeof mois === 'string' && /^\\d{4}-(0[1-9]|1[0-2])$/.test(mois);",
+  "const moisValide = mois => typeof mois === 'string' && /^\\d{4}-\\d{2}$/.test(mois);"
+ ],
+ [
+  "B3.5",
+  "(new Date(jourUtc(dateIso)).getUTCDay() + 6) % 7",
+  "new Date(jourUtc(dateIso)).getUTCDay()"
+ ],
+ [
+  "B3.5",
+  "dansLeMois: date.startsWith(`${mois}-`)",
+  "dansLeMois: true"
+ ],
+ [
+  "B3.6",
+  "const colonnes = COLONNES.slice(0, -1).map(",
+  "const colonnes = COLONNES.map("
+ ],
+ [
+  "B3.6",
+  "ticket.statut === colonne.id && urgence(ticket, aujourdhui).niveau === 'retard').length",
+  "ticket.statut === colonne.id && urgence(ticket, aujourdhui).niveau !== 'aucune').length"
+ ],
+ [
+  "B3.7",
+  "echeance: dateIsoValide(brut.echeance) ? brut.echeance : null };",
+  "echeance: null };"
+ ],
+ [
+  "B3.7",
+  "urgences: [...filtres.urgences]",
+  "urgences: []"
+ ],
+ [
+  "B3.7",
+  "if (typeof brut === 'object' && brut.version === 5) {",
+  "if (false) {"
+ ]
+]

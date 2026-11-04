@@ -114,7 +114,8 @@ if (args[0] === '--sauvegarde') {
       d.projets = s.projets.map(function (p) { return p.nom + ' (' + p.tickets.length + ' tickets)'; });
       d.vue = s.affichage && s.affichage.vue; d.utilisateur = s.affichage && s.affichage.utilisateur;
       d.sprints = s.projets.reduce(function (n, p) { return n + (Array.isArray(p.sprints) ? p.sprints.length : 0); }, 0);
-      d.ticketsEnSprint = s.tickets.filter(function (t) { return t.sprintId; }).length; }
+      d.ticketsEnSprint = s.tickets.filter(function (t) { return t.sprintId; }).length;
+      d.liensDeBlocage = s.tickets.reduce(function (n, t) { return n + (Array.isArray(t.bloquePar) ? t.bloquePar.length : 0); }, 0); }
     catch (e) { d.erreur = String(e); }
     var b = document.getElementById('bandeau-chargement');
     d.bandeau = b && !b.hidden ? (document.getElementById('bandeau-chargement-titre').textContent + ' ' + document.getElementById('bandeau-chargement-texte').textContent) : '';
@@ -153,6 +154,9 @@ if (args[0] === '--sauvegarde') {
     controles.push([`sprints et tickets engagés conservés (${sprintsAvant} sprint(s) et ${enSprintAvant} ticket(s) avant ; ${d.sprints} et ${d.ticketsEnSprint} après)`,
       d.sprints === sprintsAvant && d.ticketsEnSprint === enSprintAvant]);
   }
+  // Depuis la v5, une sauvegarde contient des liens de blocage : ils doivent survivre aux migrations suivantes
+  const liensAvant = !Array.isArray(avant) && Array.isArray(avant.tickets) ? avant.tickets.reduce((total, ticket) => total + (ticket && Array.isArray(ticket.bloquePar) ? ticket.bloquePar.length : 0), 0) : 0;
+  if (liensAvant) controles.push([`liens de blocage conservés (${liensAvant} avant, ${d.liensDeBlocage} après)`, d.liensDeBlocage === liensAvant]);
   for (const [libelle, ok] of controles) console.log(`${ok ? '✔' : '✘'} ${libelle}`);
   console.log(`  message affiché : ${d.bandeau || '(aucun)'}\n  projets : ${(d.projets || []).join(', ')} · vue ${d.vue} · « Je suis » : ${d.utilisateur || '(vide)'}\n`);
   const tousVerts = afficher(resultat);

@@ -81,8 +81,8 @@
  ],
  [
   "B2.7",
-  "bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [] };",
-  "bloquePar: [] };"
+  "bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [], echeance",
+  "bloquePar: [], echeance"
  ],
  [
   "B2.7",
