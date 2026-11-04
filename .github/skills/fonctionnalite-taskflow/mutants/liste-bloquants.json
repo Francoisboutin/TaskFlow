@@ -1,0 +1,52 @@
+[
+ [
+  "B8.1",
+  ".map(bloquant => ({ id: bloquant.id, titre: bloquant.titre, statut: bloquant.statut, termine: estTermine(bloquant) }));",
+  ".map(bloquant => ({ id: bloquant.id, titre: bloquant.titre, statut: bloquant.statut, termine: false }));"
+ ],
+ [
+  "B8.1",
+  ".map(numero => liste.find(element => element && element.id === numero)).filter(Boolean)",
+  ".map(numero => liste.find(element => element && element.id === numero) || { id: numero, titre: '', statut: '' })"
+ ],
+ [
+  "B8.2",
+  "if (!actifs.length) return '';\n    const boutons",
+  "const boutons"
+ ],
+ [
+  "B8.2",
+  "aria-label=\"Ouvrir le ticket #${bloquant.id}\">",
+  ">"
+ ],
+ [
+  "B8.2",
+  "Bloqué par ${actifs.length}</summary>",
+  "Bloqué par ${listeDesBloquants(ticket, tickets).length}</summary>"
+ ],
+ [
+  "B8.4",
+  "return liste.filter(element => element.id !== id).sort((a, b) => a.id - b.id).map(candidat => {",
+  "return liste.filter(element => element.id !== id).map(candidat => {"
+ ],
+ [
+  "B8.4",
+  "return liste.filter(element => element.id !== id).sort((a, b) => a.id - b.id).map(candidat => {",
+  "return liste.sort((a, b) => a.id - b.id).map(candidat => {"
+ ],
+ [
+  "B8.5",
+  "const essai = ticket && !choisi ? definirBloquants(liste, id, [candidat.id]) : { ok: true };",
+  "const essai = { ok: true };"
+ ],
+ [
+  "B8.5",
+  "return { id: candidat.id, titre: candidat.titre, statut: candidat.statut, choisi, possible: essai.ok,",
+  "return { id: candidat.id, titre: candidat.titre, statut: candidat.statut, choisi, possible: true,"
+ ],
+ [
+  "B8.6",
+  "(numeros.length ? `${pluriel(numeros.length, 'ticket')}",
+  "(numeros.length > 1 ? `${pluriel(numeros.length, 'ticket')}"
+ ]
+]
