@@ -4102,7 +4102,11 @@
 
   // Une ligne de ticket dans « Dans le sprint » ou « Tickets disponibles »
   function htmlTicketDeSprint(ticket, { dansLeSprint, modifiable, autreSprint }) {
-    const points = ticket.points === null ? '<span class="sprint-pts is-nv" title="Non estimé : à estimer avant d’entrer dans un sprint">?</span>' : `<span class="sprint-pts">${ticket.points}</span>`;
+    // B7 · Priorité (même pastille que la liste Backlog) et points en clair, lisibles par un lecteur d’écran
+    const priorite = `<span class="prio prio-${ticket.priorite}"><span class="sr-only">Priorité </span><span class="prio-num" aria-hidden="true">${ticket.priorite}</span> ${libelleDe(PRIORITES, ticket.priorite)}</span>`;
+    const points = ticket.points === null
+      ? '<span class="sprint-pts is-nv" title="Non estimé\u00a0: à estimer avant d’entrer dans un sprint">Non estimé</span>'
+      : `<span class="sprint-pts"><span aria-hidden="true">${ticket.points} pt${ticket.points > 1 ? 's' : ''}</span><span class="sr-only">${ticket.points} point${ticket.points > 1 ? 's' : ''} de complexité</span></span>`;
     const mentions = [
       estTermine(ticket) ? '<span class="sprint-mention is-termine">Terminé</span>' : `<span class="sprint-mention">${echapper(libelleDe(STATUTS, ticket.statut))}</span>`,
       ticket.points === null ? '<span class="sprint-mention is-alerte">non estimé</span>' : '',
@@ -4113,7 +4117,7 @@
         ? `<button type="button" class="sprint-btn" data-sprint-retirer="${ticket.id}" aria-label="Sortir le ticket #${ticket.id} du sprint" title="Sortir du sprint">${ICONE_CROIX}</button>`
         : `<button type="button" class="sprint-btn is-ajouter" data-sprint-ajouter="${ticket.id}" aria-label="Mettre le ticket #${ticket.id} dans le sprint" title="Mettre dans le sprint">+</button>`;
     return `<li class="sprint-ticket${estTermine(ticket) ? ' is-termine' : ''}" data-id="${ticket.id}"${modifiable ? ' draggable="true"' : ''}>`
-      + `<span class="sprint-num">#${ticket.id}</span><span class="sprint-titre">${echapper(ticket.titre)}<span class="sprint-mentions">${mentions}</span></span>${points}${bouton}</li>`;
+      + `<span class="sprint-num">#${ticket.id}</span><span class="sprint-titre">${echapper(ticket.titre)}<span class="sprint-mentions">${mentions}</span></span><span class="sprint-carac">${priorite}${points}</span>${bouton}</li>`;
   }
 
   function rendreSprints(projet, visibles = projet.tickets) {
@@ -4954,7 +4958,7 @@
     // B6 · Démarrage d’un sprint (JS 5b)
     demarrerSprints, aFaireSiSprintDemarre,
     // Zone 3 · UI
-    dessinerBurndown,
+    dessinerBurndown, htmlTicketDeSprint,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
   });
   demarrer();
