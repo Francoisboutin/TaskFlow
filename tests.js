@@ -28,8 +28,10 @@
     sprintsEnCours, ticketsDuKanban,
     // B6 · Démarrage d’un sprint (docs/spec.md)
     demarrerSprints, aFaireSiSprintDemarre,
+    // B8 · Listes déroulantes des bloquants (docs/spec.md)
+    listeDesBloquants, choixDeBloquants, resumeDesBloquantsChoisis,
     // Zone 3 · UI
-    dessinerBurndown, htmlTicketDeSprint,
+    dessinerBurndown, htmlTicketDeSprint, htmlBloquants,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
   } = window.TaskFlow;
 
@@ -48,6 +50,7 @@
      T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
      T45 à T47 : B4 disposition de l’écran (structure de la page). T48 à T53 : B5 Kanban du sprint en cours.
      T54 à T59 : B6 démarrage d’un sprint. T60 à T65 : B7 points et priorité dans la vue Sprints.
+     T66 à T71 : B8 listes déroulantes des bloquants.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
@@ -1352,11 +1355,98 @@
         ['B7.6 : bouton × « Sortir le ticket #4 du sprint »', !!dans && !!dans.querySelector('[data-sprint-retirer="4"][aria-label="Sortir le ticket #4 du sprint"]')],
         ['avec la priorité et les points en plus', !!disponible && !!disponible.querySelector('.prio') && !!disponible.querySelector('.sprint-pts')]
       ], () => (disponible ? disponible.outerHTML.slice(0, 260) : 'absent'), 'Mentions, boutons et glisser-déposer intacts');
+    } },
+
+    /* ---------- B8 · Listes déroulantes des tickets bloquants (docs/spec.md) ---------- */
+
+    { code: 'T66', groupe: 'b8', nom: 'B8.1 · les bloquants d’un ticket : ordre de déclaration, titre, colonne, terminé ; inconnus ignorés', executer() {
+      const manquantes = absentes({ listeDesBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(2, COLONNES[1].id, 3, null, [4, 6, 99]), ticketDeTest(4, COLONNE_BACKLOG.id, 5), ticketDeTest(6, DERNIERE.id, 2), ticketDeTest(7, COLONNES[1].id, 1)]);
+      const liste = essayer(() => listeDesBloquants(tickets[0], tickets));
+      const vide = essayer(() => listeDesBloquants(tickets[3], tickets));
+      return bilanDesEtapes([
+        ['B8.1a : [4, 6] dans cet ordre (99 ignoré)', Array.isArray(liste) && JSON.stringify(liste.map(element => element.id)) === '[4,6]'],
+        ['B8.1a : titre, colonne et « terminé » pour chacun', Array.isArray(liste) && liste.length === 2
+          && jsonTrie(liste[0]) === jsonTrie({ id: 4, titre: 'Ticket de test 4', statut: COLONNE_BACKLOG.id, termine: false })
+          && jsonTrie(liste[1]) === jsonTrie({ id: 6, titre: 'Ticket de test 6', statut: DERNIERE.id, termine: true })],
+        ['B8.1b : aucun bloquant → []', Array.isArray(vide) && vide.length === 0]
+      ], () => JSON.stringify({ liste, vide }), '#4 (Backlog) puis #6 (terminé) ; 99 ignoré');
+    } },
+
+    { code: 'T67', groupe: 'b8', nom: 'B8.2 · le badge cadenas est une liste déroulante : « Bloqué par N », un bouton par bloquant pour l’ouvrir', executer() {
+      const manquantes = absentes({ htmlBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(2, COLONNES[1].id, 3, null, [4, 6]), ticketDeTest(4, COLONNE_BACKLOG.id, 5), ticketDeTest(6, DERNIERE.id, 2)]);
+      const conteneur = document.createElement('div');
+      conteneur.innerHTML = essayer(() => htmlBloquants(tickets[0], tickets)) || '';
+      const details = conteneur.querySelector('details.bloque');
+      const resume = details && details.querySelector('summary');
+      const bouton = numero => details && details.querySelector(`button[data-modifier="${numero}"]`);
+      return bilanDesEtapes([
+        ['B8.2a : <details class="bloque"> avec un <summary> « Bloqué par 1 » (un seul bloquant actif)', !!resume && /Bloqué par 1\b/.test(texteVisible(resume))],
+        ['B8.2b : bouton #4 « #4 Ticket de test 4 · Backlog », libellé « Ouvrir le ticket #4 »', !!bouton(4) && bouton(4).getAttribute('aria-label') === 'Ouvrir le ticket #4'
+          && /#4\s+Ticket de test 4\s+·\s+Backlog/.test(texteVisible(bouton(4)))],
+        ['B8.2b : bouton #6 marqué « terminé »', !!bouton(6) && /terminé/i.test(texteVisible(bouton(6)))]
+      ], () => conteneur.innerHTML.slice(0, 300), 'Badge déroulant : « Bloqué par 1 », boutons #4 et #6 (terminé)');
+    } },
+
+    { code: 'T68', groupe: 'b8', nom: 'B8.2 · sans bloquant actif, pas de badge', executer() {
+      const manquantes = absentes({ htmlBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(2, COLONNES[1].id, 3, null, [6]), ticketDeTest(3, COLONNES[1].id, 2), ticketDeTest(6, DERNIERE.id, 2)]);
+      const tousTermines = essayer(() => htmlBloquants(tickets[0], tickets));
+      const aucun = essayer(() => htmlBloquants(tickets[1], tickets));
+      return bilanDesEtapes([
+        ['B8.2c : bloquants tous terminés → rien', tousTermines === ''],
+        ['B8.2c : aucun bloquant → rien', aucun === '']
+      ], () => JSON.stringify({ tousTermines, aucun }), 'Pas de badge quand rien ne bloque');
+    } },
+
+    { code: 'T69', groupe: 'b8', nom: 'B8.4 · le formulaire propose tous les autres tickets, triés, bloquants actuels cochés', executer() {
+      const manquantes = absentes({ choixDeBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(3, COLONNES[1].id, 2), ticketDeTest(1, COLONNES[1].id, 3), ticketDeTest(4, COLONNE_BACKLOG.id, 5), ticketDeTest(2, COLONNES[1].id, 1, null, [4])]);
+      const choix = essayer(() => choixDeBloquants(tickets, 2));
+      const nouveau = essayer(() => choixDeBloquants(tickets, null));
+      return bilanDesEtapes([
+        ['B8.4a : modification de #2 → #1, #3, #4 (triés, sans #2)', Array.isArray(choix) && JSON.stringify(choix.map(element => element.id)) === '[1,3,4]'],
+        ['B8.4a : #4 coché, les autres non ; titres et colonnes fournis', Array.isArray(choix) && choix.every(element => element.choisi === (element.id === 4))
+          && choix.every(element => element.titre === `Ticket de test ${element.id}` && typeof element.statut === 'string')],
+        ['B8.4b : nouveau ticket → les 4 tickets, tous possibles, aucun coché', Array.isArray(nouveau) && JSON.stringify(nouveau.map(element => element.id)) === '[1,2,3,4]'
+          && nouveau.every(element => element.possible === true && element.choisi === false)]
+      ], () => JSON.stringify({ choix, nouveau: Array.isArray(nouveau) ? nouveau.map(e => e.id) : nouveau }), 'Liste triée sans le ticket lui-même ; bloquants actuels cochés');
+    } },
+
+    { code: 'T70', groupe: 'b8', nom: 'B8.5 · les choix qui créeraient un cycle sont grisés, avec le cycle', executer() {
+      const manquantes = absentes({ choixDeBloquants });
+      if (manquantes.length) return testAbsent(manquantes);
+      const parId = (liste, id) => (Array.isArray(liste) ? liste.find(element => element.id === id) : null);
+      const a = essayer(() => choixDeBloquants(gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2]), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1)]), 2));
+      const b = essayer(() => choixDeBloquants(gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [3]), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1, null, [2]), ticketDeTest(4, COLONNES[1].id, 1)]), 2));
+      const c = essayer(() => choixDeBloquants(gelerEnProfondeur([ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(3, COLONNES[1].id, 1)]), 2));
+      return bilanDesEtapes([
+        ['B8.5a : #1 (qui attend #2) grisé, « Cycle refusé : #2 → #1 → #2 » ; #3 possible', !!parId(a, 1) && parId(a, 1).possible === false && parId(a, 1).raison === `Cycle refusé${NBSP}: #2 → #1 → #2` && parId(a, 3).possible === true],
+        ['B8.5b : chaîne #1 → #3 → #2 : #1 et #3 grisés, #4 possible', !!parId(b, 1) && parId(b, 1).possible === false && /^Cycle refusé/.test(parId(b, 1).raison || '')
+          && parId(b, 3).possible === false && parId(b, 4).possible === true],
+        ['B8.5c : un bloquant déjà choisi reste possible (on peut le décocher)', !!parId(c, 3) && parId(c, 3).choisi === true && parId(c, 3).possible === true]
+      ], () => JSON.stringify({ a, b, c }), 'Choix en cycle grisés, cycle expliqué');
+    } },
+
+    { code: 'T71', groupe: 'b8', nom: 'B8.6 · résumé de la liste : « Aucun », « 1 ticket : #4 », « 2 tickets : #4, #6 »', executer() {
+      const manquantes = absentes({ resumeDesBloquantsChoisis });
+      if (manquantes.length) return testAbsent(manquantes);
+      const r = numeros => essayer(() => resumeDesBloquantsChoisis(numeros));
+      return bilanDesEtapes([
+        ['B8.6a : [] → « Aucun »', r([]) === 'Aucun'],
+        ['B8.6b : [4] → « 1 ticket : #4 »', r([4]) === `1 ticket${NBSP}: #4`],
+        ['B8.6c : [4, 6] → « 2 tickets : #4, #6 »', r([4, 6]) === `2 tickets${NBSP}: #4, #6`]
+      ], () => JSON.stringify([r([]), r([4]), r([4, 6])]), '« Aucun », « 1 ticket : #4 », « 2 tickets : #4, #6 »');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)', b6: 'B6 · Démarrage d’un sprint (docs/spec.md)', b7: 'B7 · Points et priorité dans la vue Sprints (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)', b6: 'B6 · Démarrage d’un sprint (docs/spec.md)', b7: 'B7 · Points et priorité dans la vue Sprints (docs/spec.md)', b8: 'B8 · Listes déroulantes des bloquants (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
