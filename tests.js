@@ -29,7 +29,7 @@
     // B6 · Démarrage d’un sprint (docs/spec.md)
     demarrerSprints, aFaireSiSprintDemarre,
     // Zone 3 · UI
-    dessinerBurndown,
+    dessinerBurndown, htmlTicketDeSprint,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
   } = window.TaskFlow;
 
@@ -47,7 +47,7 @@
      T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
      T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
      T45 à T47 : B4 disposition de l’écran (structure de la page). T48 à T53 : B5 Kanban du sprint en cours.
-     T54 à T59 : B6 démarrage d’un sprint.
+     T54 à T59 : B6 démarrage d’un sprint. T60 à T65 : B7 points et priorité dans la vue Sprints.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
@@ -94,6 +94,12 @@
   // JSON aux clés triées, à toutes les profondeurs : compare des objets sans dépendre de l’ordre des clés
   const jsonTrie = valeur => JSON.stringify(valeur, (cle, element) => (element && typeof element === 'object' && !Array.isArray(element)
     ? Object.keys(element).sort().reduce((trie, nom) => { trie[nom] = element[nom]; return trie; }, {}) : element));
+  // B7 · Une ligne de la vue Sprints, lue dans un élément détaché (jamais inséré dans la page)
+  const ligneDeSprint = (ticket, options) => { const conteneur = document.createElement('ul'); conteneur.innerHTML = htmlTicketDeSprint(ticket, options); return conteneur.querySelector('li'); };
+  // Texte vu à l’écran (sans le texte réservé aux lecteurs d’écran) et texte lu par un lecteur d’écran (sans ce qui est aria-hidden)
+  const sansElements = (element, selecteur) => { const copie = element.cloneNode(true); copie.querySelectorAll(selecteur).forEach(enfant => enfant.remove()); return copie.textContent.replace(/\s+/g, ' ').trim(); };
+  const texteVisible = element => sansElements(element, '.sr-only');
+  const texteAccessible = element => sansElements(element, '[aria-hidden="true"]');
   const essayer = fonction => { try { return fonction(); } catch (erreur) { return { exception: erreur.message }; } };
   const ticketParId = (tickets, id) => (tickets || []).find(ticket => ticket && ticket.id === id);
   // Résultat d’un test à étapes : la 1re étape fausse est expliquée
@@ -1266,11 +1272,91 @@
         [`B6.7d : version ${VERSION_SAUVEGARDE + 1} → « version-inconnue »`, charger(`{"version":${VERSION_SAUVEGARDE + 1},"tickets":[],"projets":[]}`).origine === 'version-inconnue']
       ], () => JSON.stringify({ cree: cree.sprint || cree, relu: relu.origine, v6: v6.origine, demarreLeV6: projetV6 && projetV6.sprints[0] && projetV6.sprints[0].demarreLe, abimes: sprintsAbimes.map(s => s.demarreLe) }),
       'Nouveau sprint non démarré ; v7 : aller-retour, migration v6 → v7 sans perte, demarreLe abîmé → null');
+    } },
+
+    /* ---------- B7 · Points et priorité des tickets dans la vue Sprints (docs/spec.md) ----------
+       Le HTML de htmlTicketDeSprint est lu dans un élément détaché : la page n’est pas modifiée. */
+
+    { code: 'T60', groupe: 'b7', nom: 'B7.1 · chaque ticket de la vue Sprints affiche sa priorité (pastille et libellé)', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const priorite = p => { const ligne = ligneDeSprint({ ...ticketDeTest(1, COLONNES[1].id, 3), priorite: p }, { dansLeSprint: true, modifiable: true }); const pastille = ligne && ligne.querySelector(`.prio.prio-${p}`); return pastille ? texteVisible(pastille) : null; };
+      const obtenus = [1, 2, 3].map(priorite);
+      return bilanDesEtapes([
+        ['B7.1a : priorité 1 → pastille prio-1 « 1 Haute »', /1\s*Haute/.test(obtenus[0] || '')],
+        ['B7.1a : priorité 2 → pastille prio-2 « 2 Moyenne »', /2\s*Moyenne/.test(obtenus[1] || '')],
+        ['B7.1a : priorité 3 → pastille prio-3 « 3 Basse »', /3\s*Basse/.test(obtenus[2] || '')]
+      ], () => JSON.stringify(obtenus), 'Haute, Moyenne, Basse : même pastille que la liste Backlog');
+    } },
+
+    { code: 'T61', groupe: 'b7', nom: 'B7.2 · les points sont affichés en clair : « 5 pts », « 1 pt », « Non estimé »', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const points = valeur => { const ligne = ligneDeSprint(ticketDeTest(1, COLONNE_BACKLOG.id, valeur), { dansLeSprint: false, modifiable: true }); const element = ligne && ligne.querySelector('.sprint-pts'); return element ? { texte: texteVisible(element), nv: element.classList.contains('is-nv') } : null; };
+      const [cinq, treize, un, nonEstime] = [5, 13, 1, null].map(points);
+      return bilanDesEtapes([
+        ['B7.2a : 5 points → « 5 pts », 13 points → « 13 pts »', !!cinq && cinq.texte === '5 pts' && !!treize && treize.texte === '13 pts'],
+        ['B7.2b : 1 point → « 1 pt »', !!un && un.texte === '1 pt'],
+        ['B7.2c : non estimé → « Non estimé », mis en évidence (is-nv)', !!nonEstime && nonEstime.texte === 'Non estimé' && nonEstime.nv]
+      ], () => JSON.stringify({ cinq, treize, un, nonEstime }), '« 5 pts », « 13 pts », « 1 pt », « Non estimé »');
+    } },
+
+    { code: 'T62', groupe: 'b7', nom: 'B7.3 · lecteur d’écran : « Priorité Haute », « 5 points de complexité »', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const ligne = ligneDeSprint({ ...ticketDeTest(1, COLONNES[1].id, 5), priorite: 1 }, { dansLeSprint: true, modifiable: true });
+      const nonEstime = ligneDeSprint(ticketDeTest(2, COLONNE_BACKLOG.id, null), { dansLeSprint: false, modifiable: true });
+      const lu = (racine, selecteur) => { const element = racine && racine.querySelector(selecteur); return element ? texteAccessible(element) : null; };
+      return bilanDesEtapes([
+        ['B7.3a : la priorité se lit « Priorité Haute »', lu(ligne, '.prio') === 'Priorité Haute'],
+        ['B7.3b : les points se lisent « 5 points de complexité »', lu(ligne, '.sprint-pts') === '5 points de complexité'],
+        ['B7.3b : un ticket non estimé se lit « Non estimé »', lu(nonEstime, '.sprint-pts') === 'Non estimé']
+      ], () => JSON.stringify({ priorite: lu(ligne, '.prio'), points: lu(ligne, '.sprint-pts'), nonEstime: lu(nonEstime, '.sprint-pts') }), 'Priorité et points lus en clair');
+    } },
+
+    { code: 'T63', groupe: 'b7', nom: 'B7.4 · dans les deux listes, ordre : numéro, titre, priorité, points, bouton', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const ordreJuste = ligne => {
+        if (!ligne) return false;
+        const elements = ['.sprint-num', '.sprint-titre', '.prio', '.sprint-pts', '.sprint-btn'].map(selecteur => ligne.querySelector(selecteur));
+        return elements.every(Boolean) && elements.every((element, rang) => rang === 0 || !!(elements[rang - 1].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING));
+      };
+      const dans = ligneDeSprint(ticketDeTest(1, COLONNES[1].id, 3, 1), { dansLeSprint: true, modifiable: true });
+      const disponible = ligneDeSprint(ticketDeTest(2, COLONNE_BACKLOG.id, 8), { dansLeSprint: false, modifiable: true });
+      return bilanDesEtapes([
+        ['B7.4a et b : « Dans le sprint » → numéro, titre, priorité, points, bouton ×', ordreJuste(dans) && !!dans.querySelector('[data-sprint-retirer]')],
+        ['B7.4a et b : « Tickets disponibles » → numéro, titre, priorité, points, bouton +', ordreJuste(disponible) && !!disponible.querySelector('[data-sprint-ajouter]')]
+      ], () => [dans, disponible].map(ligne => (ligne ? ligne.innerHTML.slice(0, 200) : 'absent')).join(' | '), 'Même ordre dans les deux listes');
+    } },
+
+    { code: 'T64', groupe: 'b7', nom: 'B7.5 · sprint clôturé : priorité et points affichés, sans bouton ni glisser-déposer', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const ligne = ligneDeSprint(ticketDeTest(1, DERNIERE.id, 8, 1), { dansLeSprint: true, modifiable: false });
+      return bilanDesEtapes([
+        ['B7.5 : priorité et « 8 pts » affichés', !!ligne && !!ligne.querySelector('.prio') && !!ligne.querySelector('.sprint-pts') && texteVisible(ligne.querySelector('.sprint-pts')) === '8 pts'],
+        ['B7.5 : ni bouton ni glisser-déposer', !!ligne && !ligne.querySelector('button') && !ligne.hasAttribute('draggable')]
+      ], () => (ligne ? ligne.outerHTML.slice(0, 220) : 'absent'), 'Sprint clôturé : informations visibles, rien de modifiable');
+    } },
+
+    { code: 'T65', groupe: 'b7', nom: 'B7.6 · mentions, boutons et glisser-déposer inchangés, à côté de la priorité et des points', executer() {
+      const manquantes = absentes({ htmlTicketDeSprint });
+      if (manquantes.length) return testAbsent(manquantes);
+      const disponible = ligneDeSprint(ticketDeTest(7, COLONNES[1].id, null), { dansLeSprint: false, modifiable: true, autreSprint: { id: 2, nom: 'Sprint 2' } });
+      const dans = ligneDeSprint(ticketDeTest(4, COLONNES[1].id, 5, 1), { dansLeSprint: true, modifiable: true });
+      const mentions = disponible ? texteVisible(disponible.querySelector('.sprint-mentions') || disponible) : '';
+      return bilanDesEtapes([
+        ['B7.6 : mentions « À faire », « non estimé », « dans « Sprint 2 » » toujours là', /À faire/.test(mentions) && /non estimé/.test(mentions) && /dans «\s?Sprint 2\s?»/.test(mentions)],
+        ['B7.6 : bouton + « Mettre le ticket #7 dans le sprint », glisser-déposer actif', !!disponible && !!disponible.querySelector('[data-sprint-ajouter="7"][aria-label="Mettre le ticket #7 dans le sprint"]') && disponible.getAttribute('draggable') === 'true'],
+        ['B7.6 : bouton × « Sortir le ticket #4 du sprint »', !!dans && !!dans.querySelector('[data-sprint-retirer="4"][aria-label="Sortir le ticket #4 du sprint"]')],
+        ['avec la priorité et les points en plus', !!disponible && !!disponible.querySelector('.prio') && !!disponible.querySelector('.sprint-pts')]
+      ], () => (disponible ? disponible.outerHTML.slice(0, 260) : 'absent'), 'Mentions, boutons et glisser-déposer intacts');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)', b6: 'B6 · Démarrage d’un sprint (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)', b6: 'B6 · Démarrage d’un sprint (docs/spec.md)', b7: 'B7 · Points et priorité dans la vue Sprints (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
