@@ -15,6 +15,7 @@ Ce dossier décrit **ce que l'application doit faire**. Le code doit respecter c
 | [sauvegarde.md](sauvegarde.md) | Sauvegarde versionnée, migrations v1 → v2 → v3, plan B |
 | [interface.md](interface.md) | Vues Backlog et Kanban, recherche, filtres, tri, accessibilité |
 | [auto-tests.md](auto-tests.md) | Liste des tests T1 à T12 et ce que chacun garantit |
+| `spec.md` | Les nouvelles demandes (B1, B2…) et leurs critères d'acceptation, écrites par l'Analyste-PO (créé à la première demande) |
 
 ## Architecture des fichiers
 
@@ -24,8 +25,9 @@ taskflow/
 ├─ style.css    design, thèmes clair / sombre, animations
 ├─ app.js       1. Données · 2. Règles · 3. UI
 ├─ tests.js     auto-tests (panneau « Auto-tests »)
-├─ docs/        ces spécifications
-└─ .github/     agents/ et skills/ (configuration des agents)
+├─ docs/        ces spécifications (dont spec.md)
+├─ AGENTS.md    règles communes aux agents
+└─ .github/     agents/ (fiches des 3 agents) · skills/lancer-les-tests/
 ```
 
 ### Rôle de chaque fichier
@@ -52,3 +54,5 @@ taskflow/
 | `app.js` | Dev-JS |
 | `tests.js` | Testeur-QA |
 | `docs/` | Analyste-PO |
+
+Circuit d'une demande : Analyste-PO (spec) → Testeur-QA (tests rouges) → Dev-JS (code jusqu'au vert) → Testeur-QA (contre-vérification par mutations). Détails dans [AGENTS.md](../AGENTS.md).
