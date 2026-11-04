@@ -1,0 +1,4 @@
+[
+ ["B4.1", "vue: ['sprints', 'kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',", "vue: ['kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',"],
+ ["B4.1", "vue: ['sprints', 'kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',", "vue: affichage.vue || 'backlog',"]
+]
