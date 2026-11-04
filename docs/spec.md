@@ -675,3 +675,69 @@ Renvoie `{ tickets, sprints, demarres }` : `demarres` = `[{ sprintId, tickets: [
 - **Sprint** : un champ de plus (`demarreLe`). Les tests qui comparent un sprint champ par champ (T16 pour B1.1a, T27 pour l'aller-retour) l'attendent.
 - **Sauvegarde** : version 6 → 7 (`VERSION_SAUVEGARDE = 7`) ; une sauvegarde v6 devient une migration (`migration-v6`).
 - R1 à R6 inchangées : le passage Backlog → À faire respecte les règles de `deplacerTicket` (un ticket de sprint est toujours estimé).
+
+---
+
+## B7 · Points de complexité et priorité des tickets dans la vue Sprints
+
+- **Sujet** : `sprint-infos-tickets`
+- **Demande** : « Dans la vue "Sprint", lorsqu'on ajoute des tickets dans un sprint, il faut que les tickets affichent les points de complexité et la priorité. »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+Pour remplir un sprint, on choisit les tickets selon leur **priorité** et on les fait tenir dans la capacité grâce à leurs **points**. Jusqu'ici, la vue Sprints n'affichait qu'un chiffre sans libellé (ou « ? »), et pas la priorité.
+
+### Ce qui est affiché
+
+Chaque ligne de ticket de la vue Sprints (fonction d'affichage `htmlTicketDeSprint(ticket, { dansLeSprint, modifiable, autreSprint })`) montre, dans cet ordre : le numéro, le titre (et ses mentions), **la priorité**, **les points**, puis le bouton + ou ×.
+
+### Critères d'acceptation (7)
+
+#### B7.1 · La priorité est affichée
+
+| Cas | Ticket | Alors |
+|---|---|---|
+| a | priorité 1 / 2 / 3 | la même pastille que dans la liste Backlog (élément de classe `prio prio-1`, `prio-2`, `prio-3`) avec le numéro **et** le libellé « Haute » / « Moyenne » / « Basse » |
+
+#### B7.2 · Les points de complexité sont affichés en clair
+
+| Cas | Ticket | Alors |
+|---|---|---|
+| a | 5 points / 13 points | « 5 pts » / « 13 pts » (élément de classe `sprint-pts`) |
+| b | 1 point | « 1 pt » (singulier) |
+| c | non estimé | « Non estimé » (et non un « ? » seul), mis en évidence (classe `is-nv`) |
+
+#### B7.3 · Accessibles aux lecteurs d'écran
+
+| Cas | Alors |
+|---|---|
+| a | la priorité se lit « Priorité Haute » (et non « 1 Haute ») |
+| b | les points se lisent « 5 points de complexité » ; un ticket non estimé se lit « Non estimé » |
+
+#### B7.4 · Dans les deux listes, dans le même ordre
+
+| Cas | Alors |
+|---|---|
+| a | « Dans le sprint » et « Tickets disponibles » affichent tous deux priorité et points |
+| b | ordre des éléments : numéro, titre, priorité, points, bouton |
+
+#### B7.5 · Sprint clôturé
+
+Les tickets terminés d'un sprint clôturé affichent aussi priorité et points (sans bouton, sans glisser-déposer).
+
+#### B7.6 · Le reste ne change pas
+
+Mentions (colonne, « non estimé », « dans « Sprint X » »), boutons + / × et leur libellé accessible, glisser-déposer quand le sprint est ouvert : comme avant.
+
+#### B7.7 · Interface (vérifiée à la main)
+
+Lignes lisibles et alignées à 1 600 px ; sur téléphone (390 px), rien ne déborde : priorité et points passent sous le titre si la place manque.
+
+### Hors périmètre
+
+- Trier ou filtrer les listes de la vue Sprints par priorité (la recherche et les filtres de la colonne latérale s'appliquent déjà aux tickets disponibles, B4.4).
+
+### Impacts sur l'existant
+
+- Aucun sur les règles ni sur la sauvegarde. `htmlTicketDeSprint` est exposée dans `window.TaskFlow` pour être testée (comme `dessinerBurndown`).
