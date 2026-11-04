@@ -27,7 +27,7 @@ taskflow/
 ├─ tests.js     auto-tests (panneau « Auto-tests »)
 ├─ docs/        ces spécifications (dont spec.md)
 ├─ AGENTS.md    règles communes aux agents
-└─ .github/     agents/ (fiches des 3 agents) · skills/lancer-les-tests/
+└─ .github/     agents/ (fiches des 3 agents) · skills/fonctionnalite-taskflow/
 ```
 
 ### Rôle de chaque fichier

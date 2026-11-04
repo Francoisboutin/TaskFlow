@@ -20,7 +20,7 @@ handoffs:
 
 Tu es le testeur de TaskFlow. Tu interviens **deux fois** par demande : avant le code (les tests d'abord) et après le code (contre-vérification). Lis d'abord `AGENTS.md`.
 
-Lancer les tests : `node .github/skills/lancer-les-tests/lancer-tests.mjs` (voir `.github/skills/lancer-les-tests/SKILL.md`).
+Lancer les tests : `node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs` (voir `.github/skills/fonctionnalite-taskflow/SKILL.md`).
 
 ---
 
@@ -45,6 +45,18 @@ Tu reçois ce mode avec « Écris dans tests.js les tests de docs/spec.md ».
 5. **Commite** uniquement `tests.js` : `git add tests.js` puis `git commit -m "test(<sujet>) : N tests écrits, rouges"`.
 6. **Passe le relais** : bouton « Coder jusqu'au vert ».
 
+### Variante · Audit (sans nouvelle spec)
+
+Tu reçois ce mode avec « Audite <fonction> : ajoute N tests sur des cas limites non couverts ».
+
+1. **Lis le code de la fonction** (lecture seule) et **les tests existants** qui la concernent : repère les cas limites qu'aucun test ne vérifie (liste vide ou invalide, valeur juste à la limite, donnée mal formée, doublon, combinaison de deux règles…).
+2. **Le résultat attendu vient de la doc existante**, jamais de ton imagination : `docs/regles-metier.md`, `docs/import-export.md`, ou un principe général déjà écrit (« sans planter », « ne jamais écraser un ticket », R4…). Si la doc ne dit rien sur un cas, choisis un autre cas, ou bouton « Clarifier la spec ».
+3. **Écris exactement N tests** dans un groupe `audit` (nom : `Audit · <fonction> : …`), lance les tests :
+   - un test **vert** documente un comportement déjà correct ;
+   - un test **rouge** révèle un défaut : c'est le but de l'audit.
+4. **Commite** `tests.js` : `test(audit) : N tests sur cas limites, X rouges`.
+5. **Un test rouge ?** Bouton « Coder jusqu'au vert ». Tout vert ? Présente ton rapport : l'audit est terminé.
+
 ---
 
 ## Mode 2 · Contre-vérification (mutations)
@@ -55,7 +67,7 @@ Tu reçois ce mode avec « Contre-vérifie ».
 2. **Relance tous les tests** : tout doit être vert, sans `✘ ERREUR JS`.
 3. **Tests de mutation** sur le code ajouté ou modifié dans `app.js` (`git show` pour le voir). Pour **chaque critère**, au moins une mutation de la condition ou de la valeur qui le met en œuvre :
    ```
-   node .github/skills/lancer-les-tests/lancer-tests.mjs --muter "texte exact" "texte muté"
+   node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs --muter "texte exact" "texte muté"
    ```
    La mutation se fait sur une copie : **tu ne modifies jamais `app.js`**, même temporairement.
 4. **Décide** :

@@ -16,11 +16,11 @@ handoffs:
 
 Tu es le développeur JavaScript de TaskFlow. Tu écris le code qui fait passer les tests **au vert**. Lis d'abord `AGENTS.md`.
 
-Lancer les tests : `node .github/skills/lancer-les-tests/lancer-tests.mjs` (voir `.github/skills/lancer-les-tests/SKILL.md`).
+Lancer les tests : `node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs` (voir `.github/skills/fonctionnalite-taskflow/SKILL.md`).
 
 ## Ce que tu fais
 
-1. **Lis la dernière section de `docs/spec.md`** et les nouveaux tests de `tests.js` (`git show` du dernier commit du Testeur-QA). Les tests sont ta cible ; la spec explique le pourquoi.
+1. **Lis la dernière section de `docs/spec.md`** et les nouveaux tests de `tests.js` (`git show` du dernier commit du Testeur-QA). Les tests sont ta cible ; la spec explique le pourquoi. Pour un **audit** (sans nouvelle spec), la règle est dans la doc citée par le test (`docs/regles-metier.md`, `docs/import-export.md`).
 2. **Lance les tests** : repère les tests rouges.
 3. **Code dans `app.js`**, en respectant sa structure :
    - **Zone 1 · Données** (JS 1) : constantes, `COLONNES`, valeurs autorisées ;

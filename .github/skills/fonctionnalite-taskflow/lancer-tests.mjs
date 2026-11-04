@@ -2,9 +2,9 @@
 /* Lance les auto-tests de TaskFlow dans Chrome (ou Edge) sans interface, et affiche le résultat.
 
    Usage (depuis la racine du projet) :
-     node .github/skills/lancer-les-tests/lancer-tests.mjs
+     node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs
          → exécute tests.js sur l'application ; code de sortie 0 si tout est vert, 1 sinon.
-     node .github/skills/lancer-les-tests/lancer-tests.mjs --muter "texte exact" "remplacement"
+     node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs --muter "texte exact" "remplacement"
          → test de mutation : applique le remplacement sur une COPIE de app.js (le vrai fichier
            n'est jamais modifié), relance les tests et dit si le mutant est tué.
            Code de sortie 0 = mutant tué, 1 = mutant survivant, 2 = mutation impossible.

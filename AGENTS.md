@@ -14,7 +14,7 @@ taskflow/
 ├─ tests.js     auto-tests                              ← @Testeur-QA
 ├─ docs/        spécifications (dont docs/spec.md)      ← @Analyste-PO
 ├─ AGENTS.md    ce fichier
-└─ .github/     agents/ (fiches des agents) · skills/ (lancer-les-tests)
+└─ .github/     agents/ (fiches des agents) · skills/fonctionnalite-taskflow/
 ```
 
 Lire `docs/README.md` pour l'architecture et les règles métier existantes (R1 à R5, I1 à I5).
@@ -65,16 +65,16 @@ Si un critère de la spec est ambigu ou impossible à tester, le Testeur-QA renv
 Depuis la racine du projet :
 
 ```
-node .github/skills/lancer-les-tests/lancer-tests.mjs
+node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs
 ```
 
 Test de mutation (sur une copie : `app.js` n'est pas modifié) :
 
 ```
-node .github/skills/lancer-les-tests/lancer-tests.mjs --muter "texte exact de app.js" "texte muté"
+node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs --muter "texte exact de app.js" "texte muté"
 ```
 
-Détails : `.github/skills/lancer-les-tests/SKILL.md`. On peut aussi ouvrir `index.html` dans un navigateur : le panneau « Auto-tests » affiche le même résultat.
+Détails : `.github/skills/fonctionnalite-taskflow/SKILL.md`. On peut aussi ouvrir `index.html` dans un navigateur : le panneau « Auto-tests » affiche le même résultat.
 
 ## Le contrat entre `app.js` et `tests.js`
 
