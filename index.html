@@ -330,6 +330,52 @@
       <div class="kanban" id="kanban"></div>
     </section>
 
+    <!-- ====================== HTML 6b · SPRINTS ET BURNDOWN (B1) ====================== -->
+    <section class="sprints" aria-labelledby="sprints-titre">
+      <div class="sprints-tete">
+        <div>
+          <h2 id="sprints-titre">Sprints</h2>
+          <p class="sprints-sous">Engagez des tickets estimés dans la capacité du sprint, suivez le burndown, puis clôturez : le non-terminé revient au backlog.</p>
+        </div>
+        <div class="sprints-actions">
+          <span id="sprints-choix" class="select" hidden>
+            <label for="choix-sprint" class="sr-only">Sprint affiché</label>
+            <select id="choix-sprint" class="input"></select>
+          </span>
+          <button type="button" class="btn btn-primary btn-petit" id="btn-nouveau-sprint">+ Nouveau sprint</button>
+        </div>
+      </div>
+      <p class="sprint-vide" id="sprint-vide">Aucun sprint pour ce projet. Créez-en un : nom, dates et capacité en points.</p>
+      <!-- Rempli par le JS (JS 17b) à partir de projet.sprints -->
+      <div class="sprint-detail" id="sprint-detail" hidden>
+        <div class="sprint-infos">
+          <div class="sprint-infos-texte">
+            <p class="sprint-ligne"><span class="sprint-etat" id="sprint-etat"></span> <span id="sprint-dates"></span></p>
+            <p class="sprint-jauge-texte" id="sprint-jauge-texte" aria-live="polite"></p>
+            <span class="sprint-jauge" id="sprint-jauge" aria-hidden="true"><span class="sprint-jauge-remplie" id="sprint-jauge-remplie"></span></span>
+          </div>
+          <button type="button" class="btn btn-danger-doux btn-petit" id="btn-cloturer-sprint">Clôturer le sprint…</button>
+        </div>
+        <p id="aide-glisser-sprint" class="sprint-aide">Glissez un ticket d’une liste à l’autre, ou utilisez les boutons <strong>+</strong> et <strong>×</strong>. Un ticket non estimé ou terminé ne peut pas entrer dans un sprint.</p>
+        <div class="sprint-listes">
+          <div class="sprint-zone" id="sprint-zone-dans">
+            <h3 id="sprint-dans-titre">Dans le sprint</h3>
+            <ul class="sprint-liste" id="sprint-dans" aria-labelledby="sprint-dans-titre"></ul>
+          </div>
+          <div class="sprint-zone" id="sprint-zone-disponibles">
+            <h3 id="sprint-disponibles-titre">Tickets disponibles</h3>
+            <ul class="sprint-liste" id="sprint-disponibles" aria-labelledby="sprint-disponibles-titre"></ul>
+          </div>
+        </div>
+        <figure class="burndown">
+          <figcaption class="burndown-tete"><strong>Burndown</strong>
+            <span class="burndown-legende"><span class="legende-ideal" aria-hidden="true"></span>Rythme idéal <span class="legende-restant" aria-hidden="true"></span>Points restants</span>
+          </figcaption>
+          <div class="burndown-dessin" id="burndown"></div>
+        </figure>
+      </div>
+    </section>
+
     <!-- Journal des 10 derniers déplacements, avec « Annuler » le dernier (Ctrl+Z) -->
     <section class="journal" aria-labelledby="journal-titre">
       <div class="journal-tete">
@@ -497,6 +543,64 @@
       <button type="submit" class="btn btn-primary">Créer le projet</button>
     </div>
   </form>
+</dialog>
+
+<!-- Fenêtre « Nouveau sprint » (B1.1) -->
+<dialog id="dlg-sprint" aria-labelledby="dlg-sprint-titre">
+  <form id="form-sprint" class="dlg-form" novalidate>
+    <div class="dlg-tete">
+      <div>
+        <h2 id="dlg-sprint-titre">Nouveau sprint</h2>
+        <p class="dlg-sous">Le sprint démarre vide : glissez-y ensuite des tickets estimés.</p>
+      </div>
+      <button type="button" class="btn-fermer" data-fermer aria-label="Fermer sans créer de sprint">
+        <svg viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="dlg-corps">
+      <div class="champ">
+        <label for="s-nom">Nom du sprint <span class="oblig">(obligatoire)</span></label>
+        <input id="s-nom" name="nom" class="input" type="text" maxlength="40" autocomplete="off" aria-describedby="s-nom-aide err-s-nom">
+        <div class="champ-pied"><span id="s-nom-aide">Entre 3 et 40 caractères.</span></div>
+        <p class="erreur" id="err-s-nom" hidden></p>
+      </div>
+      <div class="sprint-dates-champs">
+        <div class="champ">
+          <label for="s-debut">Début</label>
+          <input id="s-debut" name="debut" class="input" type="date" aria-describedby="s-duree err-s-debut">
+          <p class="erreur" id="err-s-debut" hidden></p>
+        </div>
+        <div class="champ">
+          <label for="s-fin">Fin (incluse)</label>
+          <input id="s-fin" name="fin" class="input" type="date" aria-describedby="s-duree err-s-fin">
+          <p class="erreur" id="err-s-fin" hidden></p>
+        </div>
+      </div>
+      <p class="aide sprint-duree" id="s-duree"></p>
+      <div class="champ">
+        <label for="s-capacite">Capacité de l’équipe (points)</label>
+        <input id="s-capacite" name="capacite" class="input input-court" type="number" min="1" max="999" step="1" inputmode="numeric" aria-describedby="s-capacite-aide err-s-capacite">
+        <div class="champ-pied"><span id="s-capacite-aide">Nombre entier de 1 à 999. Le sprint refuse un ticket qui la ferait dépasser.</span></div>
+        <p class="erreur" id="err-s-capacite" hidden></p>
+      </div>
+    </div>
+    <div class="dlg-pied">
+      <button type="button" class="btn btn-secondary" data-fermer>Annuler</button>
+      <button type="submit" class="btn btn-primary">Créer le sprint</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Fenêtre « Clôturer le sprint » (B1.6) -->
+<dialog id="dlg-cloture" class="dlg-petit" aria-labelledby="dlg-cloture-titre" aria-describedby="dlg-cloture-texte">
+  <div class="dlg-tete">
+    <h2 id="dlg-cloture-titre">Clôturer le sprint&nbsp;?</h2>
+  </div>
+  <div class="dlg-corps" id="dlg-cloture-texte"></div>
+  <div class="dlg-pied">
+    <button type="button" class="btn btn-secondary" data-fermer autofocus>Annuler</button>
+    <button type="button" class="btn btn-danger" id="btn-confirmer-cloture">Clôturer</button>
+  </div>
 </dialog>
 
 <!-- Fenêtre « Exporter » : format et tickets à exporter -->

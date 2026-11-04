@@ -13,6 +13,7 @@
      JS 3   Validation d’un ticket
      JS 4   Règles métier : fonctions pures (deplacerTicket, modifierTicket, calculerStats)
      JS 5   Import et export : fonctions pures (CSV, JSON)
+     JS 5b  Sprints et burndown : fonctions pures (B1)
    ── Zone 3 · UI
      JS 6   État de l’application et actions sur les données
      JS 7   Recherche tolérante : casse, accents, fautes de frappe
@@ -26,6 +27,7 @@
      JS 15  Déplacer un ticket dans la liste : clavier et glisser-déposer
      JS 16  Kanban : boutons ◀ ▶, glisser-déposer et bouton Modifier
      JS 17  Import et export : fenêtres et téléchargement
+     JS 17b Sprints : panneau, jauge, glisser-déposer, clôture, burndown SVG (B1)
      JS 18  Onglets Backlog / Kanban
      JS 19  Panneaux repliables
      JS 20  Thème clair / sombre
@@ -87,6 +89,14 @@
   const NOM_PROJET_MAX = 60;
   const NON_ESTIME = 'nv';   // valeur du choix « Non estimé » dans le formulaire et les filtres
 
+  // B1 · Sprints (docs/spec.md) : un sprint est rangé dans son projet (projet.sprints)
+  const SPRINT_NOM_MIN = 3;
+  const SPRINT_NOM_MAX = 40;
+  const SPRINT_JOURS_MAX = 31;                  // durée maximale, bornes incluses
+  const SPRINT_CAPACITE_MAX = 999;              // capacité en points : entier de 1 à 999
+  const SPRINT_OUVERT = 'ouvert';
+  const SPRINT_CLOTURE = 'cloture';
+
   // Clés des préférences mémorisées dans ce navigateur
   const CLE_THEME = 'taskflow-theme';             // également lue par l’amorce placée dans <head>
   const CLE_VUE = 'taskflow-vue';
@@ -95,7 +105,7 @@
   // Sauvegarde des données (JS 22) : une enveloppe versionnée, sous une seule clé
   const CLE_SAUVEGARDE = 'taskflow';
   const CLE_SAUVEGARDE_ILLISIBLE = 'taskflow-illisible';   // copie d’une sauvegarde abîmée, gardée à part
-  const VERSION_SAUVEGARDE = 3;   // v3 : champ « assigne », journal des déplacements, « Je suis »
+  const VERSION_SAUVEGARDE = 4;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints et ticket.sprintId
 
   // Les 12 tickets du projet de démonstration « Refonte de l’espace client »
   const TICKETS_INITIAUX = [
@@ -206,6 +216,7 @@
     if (!(ticket.assigne === null || (typeof ticket.assigne === 'string' && ticket.assigne !== '' && nombreDeCaracteres(ticket.assigne) <= ASSIGNE_MAX))) {
       erreurs.assigne = `Le nom de la personne assignée fait au plus ${ASSIGNE_MAX} caractères (laissez vide si personne).`;
     }
+    if (!(ticket.sprintId === null || (Number.isInteger(ticket.sprintId) && ticket.sprintId >= 1))) erreurs.sprintId = 'Le sprint du ticket doit être un numéro de sprint, ou aucun.';
     return erreurs;
   }
 
@@ -220,7 +231,9 @@
       statut: donnees.statut,
       creeLe: donnees.creeLe,
       // v3 : personne assignée, ou null (les tickets d’avant n’ont pas ce champ : ils reçoivent null)
-      assigne: typeof donnees.assigne === 'string' && donnees.assigne.trim() ? donnees.assigne.trim().replace(/\s+/g, ' ') : null
+      assigne: typeof donnees.assigne === 'string' && donnees.assigne.trim() ? donnees.assigne.trim().replace(/\s+/g, ' ') : null,
+      // v4 (B1) : numéro du sprint du ticket, ou null (hors sprint)
+      sprintId: Number.isInteger(donnees.sprintId) && donnees.sprintId >= 1 ? donnees.sprintId : null
     };
   }
 
@@ -376,15 +389,17 @@
   // modifierTicket(tickets, id, changements)
   //   → { ok: true,  tickets: nouveauTableau, ticket: ticketModifie }
   //   → { ok: false, erreurs: { champ: message } }
-  // Le numéro (id) et la date de création (creeLe) ne changent jamais.
+  // Le numéro (id), la date de création (creeLe) et le sprint (sprintId) ne changent jamais ici.
   // Un changement de statut passe par deplacerTicket : les règles R1 et R2 s’appliquent.
-  function modifierTicket(tickets, id, changements) {
+  // sprints (facultatif, B1.5) : pour un ticket d’un sprint ouvert, ses points restent estimés
+  // et ne peuvent pas augmenter au-delà de la capacité du sprint.
+  function modifierTicket(tickets, id, changements, sprints) {
     const ticketActuel = Array.isArray(tickets) ? tickets.find(element => element && element.id === id) : null;
     if (!ticketActuel) return { ok: false, erreurs: { id: `Ticket introuvable (id ${id})` } };
 
     // 1. Les nouveaux champs, contrôlés comme pour une création (le statut est traité à l’étape 2)
     const statutVoulu = changements.statut === undefined ? ticketActuel.statut : changements.statut;
-    const ticketCandidat = construireTicket({ ...ticketActuel, ...changements, id: ticketActuel.id, creeLe: ticketActuel.creeLe, statut: ticketActuel.statut });
+    const ticketCandidat = construireTicket({ ...ticketActuel, ...changements, id: ticketActuel.id, creeLe: ticketActuel.creeLe, statut: ticketActuel.statut, sprintId: ticketActuel.sprintId });
     const erreurs = validerTicket(ticketCandidat);
     if (!STATUTS.some(statut => statut.valeur === statutVoulu)) erreurs.statut = 'Choisissez un statut\u00a0: Backlog, À faire, En cours ou Terminé.';
     if (Object.keys(erreurs).length) return { ok: false, erreurs };
@@ -401,6 +416,17 @@
     const ticketModifie = nouveauxTickets.find(element => element.id === id);
     if (ticketModifie.points === null && ticketModifie.statut !== COLONNE_BACKLOG.id) {
       return { ok: false, erreurs: { points: `Definition of Ready\u00a0: un ticket hors du «\u00a0${COLONNE_BACKLOG.titre}\u00a0» doit rester estimé. Choisissez des points, ou le statut «\u00a0${COLONNE_BACKLOG.titre}\u00a0».` } };
+    }
+
+    // 4. B1.5 · Ticket d’un sprint ouvert : il reste estimé, et ses points ne font pas dépasser la capacité.
+    //    La capacité n’est vérifiée que si les points augmentent (un titre se modifie toujours).
+    const sprint = sprintOuvertDe(ticketModifie, sprints);
+    if (sprint) {
+      if (ticketModifie.points === null) return { ok: false, erreurs: { points: 'Definition of Ready : un ticket d’un sprint doit rester estimé.' } };
+      const engages = pointsEngages(nouveauxTickets, sprint);
+      if (ticketModifie.points > (ticketActuel.points || 0) && engages > sprint.capacite) {
+        return { ok: false, erreurs: { points: `Capacité dépassée (${engages}/${sprint.capacite} points) dans le sprint « ${sprint.nom} ».` } };
+      }
     }
     return { ok: true, tickets: nouveauxTickets, ticket: ticketModifie };
   }
@@ -475,8 +501,10 @@
       .concat(tickets.map(ticket => COLONNES_FICHIER.map(colonne => celluleCsv(ticket[colonne])).join(SEPARATEUR_CSV)));
     return `\ufeff${lignes.join('\r\n')}\r\n`;
   }
-  // JSON : une liste d’objets qui suivent exactement le modèle de ticket
-  const ticketsEnJson = tickets => `${JSON.stringify(tickets.map(construireTicket), null, 2)}\n`;
+  // JSON : une liste d’objets qui suivent le modèle de ticket, colonnes du fichier seulement
+  // (B1.11 : le sprint n’est pas exporté, puisque les sprints eux-mêmes ne le sont pas)
+  const ticketsEnJson = tickets => `${JSON.stringify(tickets.map(construireTicket)
+    .map(ticket => Object.fromEntries(COLONNES_FICHIER.map(colonne => [colonne, ticket[colonne]]))), null, 2)}\n`;
 
   // Lecture d’un CSV (guillemets, guillemets doublés, retours à la ligne dans une cellule).
   // Le séparateur (; , ou tabulation) est deviné sur la 1re ligne.
@@ -841,6 +869,187 @@
   }
 
 
+  /* ========================================================================
+     JS 5b · SPRINTS ET BURNDOWN — FONCTIONS PURES (B1, docs/spec.md)
+     Un sprint : { id, nom, debut, fin, capacite, statut, releves, bilan, clotureLe },
+     rangé dans projet.sprints ; un ticket y appartient par ticket.sprintId.
+     – Un sprintId qui désigne un sprint clôturé est un historique : pour toutes
+       les règles, le ticket est « hors sprint ».
+     – Points engagés = tous les tickets du sprint, terminés compris ;
+       points restants = ceux qui ne sont pas dans la dernière colonne.
+     – Les dates sont comptées en UTC : le changement d’heure ne décale rien.
+     Pièges couverts : capacité atteinte pile (acceptée), ticket non estimé
+     (refusé), sprint d’un seul jour (n = 1 : aucune division par zéro).
+     ======================================================================== */
+  const JOUR_EN_MS = 24 * 60 * 60 * 1000;
+  const COLONNE_TERMINE = COLONNES[COLONNES.length - 1];
+  const estTermine = ticket => ticket.statut === COLONNE_TERMINE.id;
+  const pointsDe = ticket => (typeof ticket.points === 'number' ? ticket.points : 0);
+  const listeDeSprints = sprints => (Array.isArray(sprints) ? sprints.filter(sprint => sprint && typeof sprint === 'object') : []);
+  const sprintDeNumero = (sprints, id) => listeDeSprints(sprints).find(sprint => sprint.id === id) || null;
+  // Le sprint OUVERT d’un ticket, ou null (hors sprint, ou sprint clôturé)
+  function sprintOuvertDe(ticket, sprints) {
+    if (!ticket || ticket.sprintId === null || ticket.sprintId === undefined) return null;
+    const sprint = sprintDeNumero(sprints, ticket.sprintId);
+    return sprint && sprint.statut === SPRINT_OUVERT ? sprint : null;
+  }
+  const ticketsDuSprint = (tickets, sprint) => (Array.isArray(tickets) ? tickets : []).filter(ticket => ticket && ticket.sprintId === sprint.id);
+  const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).reduce((total, ticket) => total + pointsDe(ticket), 0);
+  const pointsRestants = (tickets, sprint) => ticketsDuSprint(tickets, sprint).filter(ticket => !estTermine(ticket)).reduce((total, ticket) => total + pointsDe(ticket), 0);
+  const refus = erreur => ({ ok: false, erreur });
+  const listeInvalide = tickets => !Array.isArray(tickets) || tickets.some(element => !element);
+
+  // Dates « AAAA-MM-JJ » → minuit UTC (jamais l’heure locale : pas de jour de 23 h ou de 25 h)
+  function jourUtc(dateIso) {
+    const [annee, mois, jour] = String(dateIso).split('-').map(Number);
+    return Date.UTC(annee, mois - 1, jour);
+  }
+  // nombreDeJours('2026-11-04', '2026-11-04') → 1 : bornes incluses
+  const nombreDeJours = (debut, fin) => Math.round((jourUtc(fin) - jourUtc(debut)) / JOUR_EN_MS) + 1;
+  function datePlusJours(dateIso, jours) {
+    const date = new Date(jourUtc(dateIso) + jours * JOUR_EN_MS);
+    return Number.isNaN(date.getTime()) ? String(dateIso) : date.toISOString().slice(0, 10);
+  }
+
+  // Vérifie les champs d’un sprint → { champ: message } (vide si tout est correct)
+  function verifierSprint(donnees) {
+    const erreurs = {};
+    const nom = typeof donnees.nom === 'string' ? donnees.nom.trim() : '';
+    const longueur = nombreDeCaracteres(nom);
+    if (longueur < SPRINT_NOM_MIN || longueur > SPRINT_NOM_MAX) erreurs.nom = `Le nom du sprint fait de ${SPRINT_NOM_MIN} à ${SPRINT_NOM_MAX} caractères.`;
+    const debutValide = dateIsoValide(donnees.debut);
+    if (!debutValide) erreurs.debut = 'La date de début doit être au format AAAA-MM-JJ.';
+    if (!dateIsoValide(donnees.fin)) erreurs.fin = 'La date de fin doit être au format AAAA-MM-JJ.';
+    else if (debutValide && donnees.fin < donnees.debut) erreurs.fin = 'La fin ne peut pas précéder le début.';
+    else if (debutValide && nombreDeJours(donnees.debut, donnees.fin) > SPRINT_JOURS_MAX) erreurs.fin = `Un sprint dure au plus ${SPRINT_JOURS_MAX} jours.`;
+    if (!Number.isInteger(donnees.capacite) || donnees.capacite < 1 || donnees.capacite > SPRINT_CAPACITE_MAX) {
+      erreurs.capacite = `La capacité est un nombre entier de points, de 1 à ${SPRINT_CAPACITE_MAX}.`;
+    }
+    return erreurs;
+  }
+
+  // B1.1 · creerSprint(sprints, { nom, debut, fin, capacite }) → { ok, sprints, sprint } ou { ok: false, erreurs }
+  function creerSprint(sprints, donnees) {
+    const liste = listeDeSprints(sprints);
+    const erreurs = verifierSprint(donnees || {});
+    if (Object.keys(erreurs).length) return { ok: false, erreurs };
+    const id = liste.reduce((plusGrand, sprint) => (Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 1;
+    const sprint = { id, nom: donnees.nom.trim(), debut: donnees.debut, fin: donnees.fin, capacite: donnees.capacite,
+      statut: SPRINT_OUVERT, releves: {}, bilan: null, clotureLe: null };
+    return { ok: true, sprints: [...liste, sprint], sprint };
+  }
+
+  // B1.3 · ajouterAuSprint(tickets, sprints, idTicket, idSprint) → { ok, tickets } ou { ok: false, erreur }
+  // Contrôles : liste, ticket, sprint, sprint clôturé, déjà dans ce sprint, Definition of Ready, terminé, capacité.
+  function ajouterAuSprint(tickets, sprints, idTicket, idSprint) {
+    if (listeInvalide(tickets)) return refus('Liste de tickets invalide');
+    const ticket = tickets.find(element => element.id === idTicket);
+    if (!ticket) return refus(`Ticket introuvable (id ${idTicket})`);
+    const sprint = sprintDeNumero(sprints, idSprint);
+    if (!sprint) return refus(`Sprint introuvable (id ${idSprint})`);
+    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé : on ne peut plus le modifier');
+    if (ticket.sprintId === sprint.id) return { ok: true, tickets: tickets.slice() };          // déjà dedans : pas compté deux fois
+    if (typeof ticket.points !== 'number') return refus(`Definition of Ready : le ticket #${idTicket} n’est pas estimé`);
+    if (estTermine(ticket)) return refus(`Le ticket #${idTicket} est déjà terminé`);
+    const total = pointsEngages(tickets, sprint) + ticket.points;
+    if (total > sprint.capacite) return refus(`Capacité dépassée (${total}/${sprint.capacite} points)`);   // pile = accepté
+    return { ok: true, tickets: tickets.map(element => (element.id === idTicket ? { ...element, sprintId: sprint.id } : element)) };
+  }
+
+  // B1.4 · retirerDuSprint(tickets, sprints, idTicket) → { ok, tickets } ou { ok: false, erreur }
+  function retirerDuSprint(tickets, sprints, idTicket) {
+    if (listeInvalide(tickets)) return refus('Liste de tickets invalide');
+    const ticket = tickets.find(element => element.id === idTicket);
+    if (!ticket) return refus(`Ticket introuvable (id ${idTicket})`);
+    if (!sprintOuvertDe(ticket, sprints)) return refus(`Le ticket #${idTicket} n’est dans aucun sprint ouvert`);
+    return { ok: true, tickets: tickets.map(element => (element.id === idTicket ? { ...element, sprintId: null } : element)) };
+  }
+
+  // B1.6 · cloturerSprint(tickets, sprints, idSprint, aujourdhui) → { ok, tickets, sprints, retournes } ou { ok: false, erreur }
+  // Le non-terminé revient dans la colonne Backlog, hors sprint ; le terminé garde son sprint (historique).
+  function cloturerSprint(tickets, sprints, idSprint, aujourdhui) {
+    if (listeInvalide(tickets)) return refus('Liste de tickets invalide');
+    const sprint = sprintDeNumero(sprints, idSprint);
+    if (!sprint) return refus(`Sprint introuvable (id ${idSprint})`);
+    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé : on ne peut plus le modifier');
+    const engage = pointsEngages(tickets, sprint);
+    const restant = pointsRestants(tickets, sprint);
+    const retournes = [];
+    const nouveaux = tickets.map(ticket => {
+      if (ticket.sprintId !== sprint.id || estTermine(ticket)) return ticket;
+      retournes.push(ticket.id);
+      return { ...ticket, statut: COLONNE_BACKLOG.id, sprintId: null };
+    });
+    // Dernier relevé : à la date de clôture, ou à la fin du sprint si on clôture plus tard ; aucun avant le début
+    const releves = { ...(sprint.releves || {}) };
+    if (aujourdhui >= sprint.debut) releves[aujourdhui < sprint.fin ? aujourdhui : sprint.fin] = restant;
+    const clos = { ...sprint, statut: SPRINT_CLOTURE, releves, bilan: { engage, termine: engage - restant, restant }, clotureLe: aujourdhui };
+    return { ok: true, tickets: nouveaux, sprints: listeDeSprints(sprints).map(element => (element === sprint ? clos : element)), retournes };
+  }
+
+  // B1.8 · noterReleve(sprint, tickets, aujourdhui) → le sprint avec le relevé du jour (nouvel objet),
+  // ou le même sprint s’il n’est pas ouvert, pas en cours aujourd’hui, ou si le relevé est déjà à jour
+  function noterReleve(sprint, tickets, aujourdhui) {
+    if (!sprint || sprint.statut !== SPRINT_OUVERT || aujourdhui < sprint.debut || aujourdhui > sprint.fin) return sprint;
+    const restant = pointsRestants(tickets, sprint);
+    if (sprint.releves && sprint.releves[aujourdhui] === restant) return sprint;
+    return { ...sprint, releves: { ...(sprint.releves || {}), [aujourdhui]: restant } };
+  }
+
+  // B1.7 · calculerBurndown(sprint, tickets, aujourdhui) → { jours, engage, ideal, restant }
+  //   n = nombre de jours (≥ 1) ; ideal et restant ont n + 1 valeurs : indice 0 = début du 1er jour,
+  //   indice k = fin du jour k. ideal[k] = engagé × (n − k) / n : n ≥ 1, donc jamais de division par zéro.
+  //   restant : engagé au début ; ensuite le relevé du jour (ou le dernier relevé précédent), la valeur
+  //   actuelle pour aujourd’hui (sprint ouvert), null pour le futur et après la clôture.
+  function calculerBurndown(sprint, tickets, aujourdhui) {
+    const jours = nombreDeJours(sprint.debut, sprint.fin);
+    const n = Number.isInteger(jours) && jours >= 1 ? jours : 1;
+    const liste = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
+    const ouvert = sprint.statut === SPRINT_OUVERT;
+    const bilan = sprint.bilan && typeof sprint.bilan === 'object' ? sprint.bilan : {};
+    const engage = ouvert ? pointsEngages(liste, sprint) : (Number.isFinite(bilan.engage) ? bilan.engage : 0);
+    const arrondi = valeur => Math.round(valeur * 100) / 100;
+    const ideal = Array.from({ length: n + 1 }, (_, rang) => arrondi((engage * (n - rang)) / n));
+    const releves = sprint.releves && typeof sprint.releves === 'object' ? sprint.releves : {};
+    const limite = !ouvert && dateIsoValide(sprint.clotureLe) && sprint.clotureLe < aujourdhui ? sprint.clotureLe : aujourdhui;
+    const restantActuel = pointsRestants(liste, sprint);
+    const listeDesJours = Array.from({ length: n }, (_, rang) => datePlusJours(sprint.debut, rang));
+    const restant = [engage];
+    let report = engage;
+    for (const jour of listeDesJours) {
+      if (Number.isFinite(releves[jour])) report = releves[jour];
+      if (jour > limite) restant.push(null);
+      else if (ouvert && jour === aujourdhui) restant.push(restantActuel);
+      else restant.push(report);
+    }
+    return { jours: listeDesJours, engage, ideal, restant };
+  }
+
+  // Relit les sprints d’une sauvegarde : un sprint aux dates, à la durée ou à la capacité invalides est écarté ;
+  // un nom invalide est remplacé ; relevés et bilan sont nettoyés (nombres finis, positifs).
+  function lireSprints(brut) {
+    const sprints = [];
+    const vus = new Set();
+    const positif = valeur => (Number.isFinite(valeur) && valeur >= 0 ? valeur : 0);
+    for (const element of Array.isArray(brut) ? brut : []) {
+      if (!element || typeof element !== 'object' || !Number.isInteger(element.id) || element.id < 1 || vus.has(element.id)) continue;
+      const erreurs = verifierSprint(element);
+      if (erreurs.debut || erreurs.fin || erreurs.capacite) continue;
+      const statut = element.statut === SPRINT_CLOTURE ? SPRINT_CLOTURE : SPRINT_OUVERT;
+      const releves = {};
+      if (element.releves && typeof element.releves === 'object') {
+        for (const [jour, valeur] of Object.entries(element.releves)) if (dateIsoValide(jour) && Number.isFinite(valeur) && valeur >= 0) releves[jour] = valeur;
+      }
+      const bilanBrut = element.bilan && typeof element.bilan === 'object' ? element.bilan : {};
+      vus.add(element.id);
+      sprints.push({ id: element.id, nom: erreurs.nom ? `Sprint ${element.id}` : element.nom.trim(), debut: element.debut, fin: element.fin, capacite: element.capacite,
+        statut, releves,
+        bilan: statut === SPRINT_CLOTURE ? { engage: positif(bilanBrut.engage), termine: positif(bilanBrut.termine), restant: positif(bilanBrut.restant) } : null,
+        clotureLe: statut === SPRINT_CLOTURE ? (dateIsoValide(element.clotureLe) ? element.clotureLe : element.fin) : null });
+    }
+    return sprints;
+  }
+
   /* ########################################################################
      ZONE 3 · UI (état de l’application, page, actions de l’utilisateur, sauvegarde)
      ######################################################################## */
@@ -868,7 +1077,8 @@
     filtres: filtresVides(),
     tri: triParDefaut(),           // critères de tri dans l’ordre d’importance : [{ critere, sens }]
     vue: 'backlog',                // vue affichée : 'backlog' (liste) ou 'kanban'
-    utilisateur: ''                // « Je suis » : sert au filtre « Mes tickets »
+    utilisateur: '',               // « Je suis » : sert au filtre « Mes tickets »
+    sprintAfficheId: null          // B1 : sprint affiché dans la section « Sprints » (non sauvegardé)
   };
 
   const projetActif = () => etat.projets.find(projet => projet.id === etat.projetActifId);
@@ -928,7 +1138,7 @@
   function enregistrerModification(id, changements) {
     const projet = projetActif();
     const ancien = projet.tickets.find(element => element.id === id);
-    const resultat = modifierTicket(projet.tickets, id, changements);
+    const resultat = modifierTicket(projet.tickets, id, changements, projet.sprints);
     if (!resultat.ok) return resultat;
     const inchange = JSON.stringify(ancien) === JSON.stringify(resultat.ticket);
     const avant = instantane(projet);
@@ -979,6 +1189,8 @@
     projet.ordreManuel = null;
     projet.notesImport = {};
     projet.journal = [];
+    projet.sprints = [];                                // B1.12 : les sprints du projet sont effacés avec ses tickets
+    etat.sprintAfficheId = null;
     etat.filtres = filtresVides();
     return projet;
   }
@@ -995,7 +1207,7 @@
   }
 
   function creerProjet(nom) {
-    const projet = { id: etat.prochainIdProjet++, nom: nom.trim(), tickets: [], ordreManuel: null, notesImport: {}, journal: [] };
+    const projet = { id: etat.prochainIdProjet++, nom: nom.trim(), tickets: [], ordreManuel: null, notesImport: {}, journal: [], sprints: [] };
     etat.projets.push(projet);
     return projet;
   }
@@ -1747,6 +1959,7 @@
   }
 
   function rendre() {
+    noterRelevesDuJour();                             // B1.8 : relevé du jour des sprints ouverts (burndown)
     rendreLaPage();
     sauvegarder();                                    // chaque modification passe par ici : elle est enregistrée
   }
@@ -1773,6 +1986,7 @@
   function rendreLaPage() {
     const projet = projetActif();
     rendreJournal(projet);
+    rendreSprints(projet);
     const tousLesTickets = projet.tickets;
     const { motsTapes, visibles } = ticketsAffiches(projet);
     const filtresActifs = nombreDeFiltresActifs(motsTapes);
@@ -3433,6 +3647,316 @@
 
 
   /* ========================================================================
+     JS 17b · SPRINTS : PANNEAU, JAUGE DE CAPACITÉ, GLISSER-DÉPOSER, CLÔTURE, BURNDOWN (B1)
+     Toutes les décisions passent par les fonctions pures de JS 5b
+     (ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown) :
+     l’interface ne fait qu’appliquer leur résultat, ou expliquer leur refus.
+     ======================================================================== */
+  const sprintsUI = {
+    blocChoix: trouver('#sprints-choix'),
+    choix: trouver('#choix-sprint'),
+    boutonNouveau: trouver('#btn-nouveau-sprint'),
+    vide: trouver('#sprint-vide'),
+    detail: trouver('#sprint-detail'),
+    etat: trouver('#sprint-etat'),
+    dates: trouver('#sprint-dates'),
+    jaugeTexte: trouver('#sprint-jauge-texte'),
+    jauge: trouver('#sprint-jauge'),
+    jaugeRemplie: trouver('#sprint-jauge-remplie'),
+    boutonCloturer: trouver('#btn-cloturer-sprint'),
+    zoneDans: trouver('#sprint-zone-dans'),
+    zoneDisponibles: trouver('#sprint-zone-disponibles'),
+    listeDans: trouver('#sprint-dans'),
+    listeDisponibles: trouver('#sprint-disponibles'),
+    titreDans: trouver('#sprint-dans-titre'),
+    burndown: trouver('#burndown'),
+    // Fenêtre « Nouveau sprint »
+    fenetre: trouver('#dlg-sprint'),
+    formulaire: trouver('#form-sprint'),
+    champNom: trouver('#s-nom'),
+    champDebut: trouver('#s-debut'),
+    champFin: trouver('#s-fin'),
+    champCapacite: trouver('#s-capacite'),
+    duree: trouver('#s-duree'),
+    // Fenêtre « Clôturer le sprint »
+    fenetreCloture: trouver('#dlg-cloture'),
+    texteCloture: trouver('#dlg-cloture-texte'),
+    boutonConfirmerCloture: trouver('#btn-confirmer-cloture')
+  };
+  const CHAMPS_SPRINT = { nom: 'champNom', debut: 'champDebut', fin: 'champFin', capacite: 'champCapacite' };
+
+  // Sprint affiché : celui choisi, sinon le dernier sprint ouvert, sinon le dernier créé
+  function sprintAffiche(projet) {
+    const sprints = projet.sprints || [];
+    return sprints.find(sprint => sprint.id === etat.sprintAfficheId)
+      || [...sprints].reverse().find(sprint => sprint.statut === SPRINT_OUVERT)
+      || sprints[sprints.length - 1] || null;
+  }
+
+  // Le relevé du jour de chaque sprint ouvert (appelé avant chaque affichage, donc avant chaque sauvegarde)
+  function noterRelevesDuJour() {
+    const projet = projetActif();
+    if (!projet || !Array.isArray(projet.sprints) || !projet.sprints.length) return;
+    const jour = aujourdhuiIso();
+    projet.sprints = projet.sprints.map(sprint => noterReleve(sprint, projet.tickets, jour));
+  }
+
+  // Dessin SVG du burndown. Aucune division par zéro : n ≥ 1 jour, échelle verticale ≥ 1 point.
+  function dessinerBurndown(burndown) {
+    const LARGEUR = 640;
+    const HAUTEUR = 260;
+    const MARGE = { gauche: 46, droite: 18, haut: 16, bas: 42 };
+    const fini = valeur => (typeof valeur === 'number' && Number.isFinite(valeur) ? valeur : 0);
+    const jours = Array.isArray(burndown.jours) ? burndown.jours : [];
+    const n = Math.max(1, jours.length);
+    const ideal = (Array.isArray(burndown.ideal) ? burndown.ideal : []).map(fini);
+    const restant = Array.isArray(burndown.restant) ? burndown.restant : [];
+    const maximum = Math.max(1, fini(burndown.engage), ...ideal, ...restant.filter(valeur => valeur !== null).map(fini));
+    const arrondi = valeur => Math.round(valeur * 10) / 10;
+    const x = rang => arrondi(MARGE.gauche + (rang * (LARGEUR - MARGE.gauche - MARGE.droite)) / n);
+    const y = valeur => arrondi(MARGE.haut + (HAUTEUR - MARGE.haut - MARGE.bas) * (1 - valeur / maximum));
+    const enPoints = valeurs => valeurs.map(([rang, valeur]) => `${x(rang)},${y(valeur)}`).join(' ');
+
+    // Graduations : 0, la moitié et le maximum (sans doublon quand le maximum vaut 1)
+    const graduations = [...new Set([0, Math.round(maximum / 2), maximum])];
+    const lignesHorizontales = graduations.map(valeur => `<line class="bd-grille" x1="${MARGE.gauche}" x2="${LARGEUR - MARGE.droite}" y1="${y(valeur)}" y2="${y(valeur)}"/>`
+      + `<text class="bd-texte" x="${MARGE.gauche - 8}" y="${arrondi(y(valeur) + 4)}" text-anchor="end">${valeur}</text>`).join('');
+    // Étiquettes des jours (au plus 8, pour rester lisibles) : fin du jour k
+    const pas = Math.ceil(n / 8);
+    const etiquettes = jours.map((jour, rang) => ((rang + 1) % pas === 0 || rang === n - 1
+      ? `<text class="bd-texte" x="${x(rang + 1)}" y="${HAUTEUR - MARGE.bas + 18}" text-anchor="middle">${jour.slice(8, 10)}/${jour.slice(5, 7)}</text>` : '')).join('');
+    const pointsRestants = restant.map((valeur, rang) => [rang, valeur]).filter(([, valeur]) => valeur !== null).map(([rang, valeur]) => [rang, fini(valeur)]);
+    const dernier = pointsRestants.length ? pointsRestants[pointsRestants.length - 1][1] : fini(burndown.engage);
+    const titre = `Burndown : ${pluriel(fini(burndown.engage), 'point')} engagé${fini(burndown.engage) > 1 ? 's' : ''} sur ${pluriel(n, 'jour')}. `
+      + `Ligne idéale de ${fini(burndown.engage)} à 0 ; ${pluriel(dernier, 'point')} restant${dernier > 1 ? 's' : ''} au dernier relevé.`;
+    return `<svg class="burndown-svg" viewBox="0 0 ${LARGEUR} ${HAUTEUR}" role="img" focusable="false"><title>${echapper(titre)}</title>`
+      + `${lignesHorizontales}<line class="bd-axe" x1="${MARGE.gauche}" x2="${MARGE.gauche}" y1="${MARGE.haut}" y2="${HAUTEUR - MARGE.bas}"/>`
+      + `<line class="bd-axe" x1="${MARGE.gauche}" x2="${LARGEUR - MARGE.droite}" y1="${HAUTEUR - MARGE.bas}" y2="${HAUTEUR - MARGE.bas}"/>${etiquettes}`
+      + `<polyline class="bd-ideal" points="${enPoints(ideal.map((valeur, rang) => [rang, valeur]))}"/>`
+      + `<polyline class="bd-restant" points="${enPoints(pointsRestants)}"/>`
+      + pointsRestants.map(([rang, valeur]) => `<circle class="bd-point" cx="${x(rang)}" cy="${y(valeur)}" r="3.5"/>`).join('')
+      + '</svg>';
+  }
+
+  // Une ligne de ticket dans « Dans le sprint » ou « Tickets disponibles »
+  function htmlTicketDeSprint(ticket, { dansLeSprint, modifiable, autreSprint }) {
+    const points = ticket.points === null ? '<span class="sprint-pts is-nv" title="Non estimé : à estimer avant d’entrer dans un sprint">?</span>' : `<span class="sprint-pts">${ticket.points}</span>`;
+    const mentions = [
+      estTermine(ticket) ? '<span class="sprint-mention is-termine">Terminé</span>' : `<span class="sprint-mention">${echapper(libelleDe(STATUTS, ticket.statut))}</span>`,
+      ticket.points === null ? '<span class="sprint-mention is-alerte">non estimé</span>' : '',
+      autreSprint ? `<span class="sprint-mention is-info">dans « ${echapper(autreSprint.nom)} »</span>` : ''
+    ].join('');
+    const bouton = !modifiable ? ''
+      : dansLeSprint
+        ? `<button type="button" class="sprint-btn" data-sprint-retirer="${ticket.id}" aria-label="Sortir le ticket #${ticket.id} du sprint" title="Sortir du sprint">${ICONE_CROIX}</button>`
+        : `<button type="button" class="sprint-btn is-ajouter" data-sprint-ajouter="${ticket.id}" aria-label="Mettre le ticket #${ticket.id} dans le sprint" title="Mettre dans le sprint">+</button>`;
+    return `<li class="sprint-ticket${estTermine(ticket) ? ' is-termine' : ''}" data-id="${ticket.id}"${modifiable ? ' draggable="true"' : ''}>`
+      + `<span class="sprint-num">#${ticket.id}</span><span class="sprint-titre">${echapper(ticket.titre)}<span class="sprint-mentions">${mentions}</span></span>${points}${bouton}</li>`;
+  }
+
+  function rendreSprints(projet) {
+    const sprints = projet.sprints || [];
+    const sprint = sprintAffiche(projet);
+    etat.sprintAfficheId = sprint ? sprint.id : null;
+    sprintsUI.blocChoix.hidden = !sprints.length;
+    remplacerContenu(sprintsUI.choix, sprints.map(element => `<option value="${element.id}">${echapper(element.nom)}${element.statut === SPRINT_CLOTURE ? ' (clôturé)' : ''}</option>`).join(''));
+    sprintsUI.choix.value = sprint ? String(sprint.id) : '';
+    sprintsUI.vide.hidden = !!sprint;
+    sprintsUI.detail.hidden = !sprint;
+    if (!sprint) return;
+
+    const ouvert = sprint.statut === SPRINT_OUVERT;
+    const aujourdhui = aujourdhuiIso();
+    const jours = nombreDeJours(sprint.debut, sprint.fin);
+    const quand = !ouvert ? `Clôturé le ${dateEnFrancais(sprint.clotureLe || sprint.fin)}`
+      : aujourdhui < sprint.debut ? 'À venir' : aujourdhui > sprint.fin ? 'Date de fin dépassée : à clôturer' : 'En cours';
+    sprintsUI.etat.textContent = quand;
+    sprintsUI.etat.className = `sprint-etat${!ouvert ? ' is-cloture' : aujourdhui > sprint.fin ? ' is-alerte' : ''}`;
+    sprintsUI.dates.textContent = `Du ${dateEnFrancais(sprint.debut)} au ${dateEnFrancais(sprint.fin)} · ${pluriel(jours, 'jour')}`;
+
+    // Jauge de capacité : barre plafonnée à 100 % ; « pile » et « dépassée » se distinguent
+    const engages = ouvert ? pointsEngages(projet.tickets, sprint) : (sprint.bilan ? sprint.bilan.engage : 0);
+    const capacite = sprint.capacite;
+    const pile = engages === capacite;
+    const depasse = engages > capacite;
+    sprintsUI.jaugeTexte.innerHTML = ouvert
+      ? `<strong>${engages} / ${capacite}</strong> points engagés · ${depasse ? `<span class="is-ko">capacité dépassée de ${engages - capacite}</span>` : pile ? '<span class="is-pile">capacité atteinte</span>' : `${pluriel(capacite - engages, 'point')} libre${capacite - engages > 1 ? 's' : ''}`}`
+      : `<strong>${sprint.bilan.termine} / ${sprint.bilan.engage}</strong> points terminés · ${pluriel(sprint.bilan.restant, 'point')} remis au backlog · capacité ${capacite}`;
+    sprintsUI.jauge.className = `sprint-jauge${depasse ? ' is-depasse' : pile ? ' is-pile' : ''}`;
+    sprintsUI.jaugeRemplie.style.width = `${capacite > 0 ? Math.min(100, Math.round((engages / capacite) * 100)) : 0}%`;
+    sprintsUI.boutonCloturer.hidden = !ouvert;
+
+    // Les deux listes
+    const dans = projet.tickets.filter(ticket => ticket.sprintId === sprint.id && (ouvert || estTermine(ticket)));
+    sprintsUI.titreDans.textContent = ouvert ? `Dans le sprint (${dans.length})` : `Terminés dans ce sprint (${dans.length})`;
+    remplacerContenu(sprintsUI.listeDans, dans.length
+      ? dans.map(ticket => htmlTicketDeSprint(ticket, { dansLeSprint: true, modifiable: ouvert })).join('')
+      : `<li class="sprint-liste-vide">${ouvert ? 'Glissez ici des tickets estimés, ou utilisez le bouton +.' : 'Aucun ticket terminé.'}</li>`);
+    sprintsUI.zoneDisponibles.hidden = !ouvert;
+    if (ouvert) {
+      const disponibles = projet.tickets.filter(ticket => ticket.sprintId !== sprint.id && !estTermine(ticket));
+      remplacerContenu(sprintsUI.listeDisponibles, disponibles.length
+        ? disponibles.map(ticket => htmlTicketDeSprint(ticket, { dansLeSprint: false, modifiable: true, autreSprint: sprintOuvertDe(ticket, projet.sprints) })).join('')
+        : '<li class="sprint-liste-vide">Aucun autre ticket à planifier.</li>');
+    }
+    remplacerContenu(sprintsUI.burndown, dessinerBurndown(calculerBurndown(sprint, projet.tickets, aujourdhui)));
+  }
+
+  // Refus d’une règle de sprint → message avec un conseil
+  function expliquerRefusSprint(erreur) {
+    if (/^Capacité dépassée/.test(erreur)) return `${erreur}. Sortez un ticket du sprint, ou choisissez-en un plus petit.`;
+    if (/^Definition of Ready/.test(erreur)) return `${erreur}. Estimez-le d’abord (bouton Modifier).`;
+    if (/déjà terminé$/.test(erreur)) return `${erreur} : il n’a rien à faire dans un sprint.`;
+    return erreur;
+  }
+  function appliquerAuSprint(resultat, messageReussi) {
+    if (!resultat.ok) { notifier(expliquerRefusSprint(resultat.erreur)); return false; }
+    projetActif().tickets = resultat.tickets;
+    rendre();
+    page.annonce.textContent = messageReussi;
+    return true;
+  }
+  function mettreDansLeSprint(id) {
+    const projet = projetActif();
+    const sprint = sprintAffiche(projet);
+    if (sprint) appliquerAuSprint(ajouterAuSprint(projet.tickets, projet.sprints, id, sprint.id), `Ticket #${id} mis dans le sprint « ${sprint.nom} ».`);
+  }
+  function sortirDuSprint(id) {
+    const projet = projetActif();
+    appliquerAuSprint(retirerDuSprint(projet.tickets, projet.sprints, id), `Ticket #${id} sorti du sprint.`);
+  }
+
+  sprintsUI.choix.addEventListener('change', () => { etat.sprintAfficheId = Number(sprintsUI.choix.value); rendre(); });
+  sprintsUI.detail.addEventListener('click', evenement => {
+    const ajouter = evenement.target.closest('[data-sprint-ajouter]');
+    if (ajouter) { mettreDansLeSprint(Number(ajouter.dataset.sprintAjouter)); return; }
+    const retirer = evenement.target.closest('[data-sprint-retirer]');
+    if (retirer) sortirDuSprint(Number(retirer.dataset.sprintRetirer));
+  });
+
+  // Glisser-déposer entre les deux listes (souris) ; au clavier et au doigt : les boutons + et ×
+  let idGlisseVersSprint = null;
+  sprintsUI.detail.addEventListener('dragstart', evenement => {
+    const ligne = evenement.target.closest('.sprint-ticket[draggable="true"]');
+    if (!ligne) return;
+    idGlisseVersSprint = Number(ligne.dataset.id);
+    evenement.dataTransfer.effectAllowed = 'move';
+    evenement.dataTransfer.setData('text/plain', String(idGlisseVersSprint));
+    ligne.classList.add('is-glisse');
+  });
+  sprintsUI.detail.addEventListener('dragend', evenement => {
+    const ligne = evenement.target.closest('.sprint-ticket');
+    if (ligne) ligne.classList.remove('is-glisse');
+    idGlisseVersSprint = null;
+    for (const zone of [sprintsUI.zoneDans, sprintsUI.zoneDisponibles]) zone.classList.remove('is-survol');
+  });
+  for (const zone of [sprintsUI.zoneDans, sprintsUI.zoneDisponibles]) {
+    zone.addEventListener('dragover', evenement => {
+      if (idGlisseVersSprint === null) return;
+      evenement.preventDefault();
+      evenement.dataTransfer.dropEffect = 'move';
+      zone.classList.add('is-survol');
+    });
+    zone.addEventListener('dragleave', evenement => { if (!zone.contains(evenement.relatedTarget)) zone.classList.remove('is-survol'); });
+    zone.addEventListener('drop', evenement => {
+      if (idGlisseVersSprint === null) return;
+      evenement.preventDefault();
+      zone.classList.remove('is-survol');
+      const id = idGlisseVersSprint;
+      idGlisseVersSprint = null;
+      const ticket = projetActif().tickets.find(element => element.id === id);
+      const sprint = sprintAffiche(projetActif());
+      if (!ticket || !sprint) return;
+      const versLeSprint = zone === sprintsUI.zoneDans;
+      if (versLeSprint && ticket.sprintId !== sprint.id) mettreDansLeSprint(id);
+      else if (!versLeSprint && ticket.sprintId === sprint.id) sortirDuSprint(id);
+    });
+  }
+
+  // Fenêtre « Nouveau sprint »
+  function afficherErreursSprint(erreurs) {
+    for (const [champ, nomDuChamp] of Object.entries(CHAMPS_SPRINT)) {
+      const message = erreurs[champ] || '';
+      const zoneErreur = trouver(`#err-s-${champ}`);
+      zoneErreur.textContent = message;
+      zoneErreur.hidden = !message;
+      sprintsUI[nomDuChamp].setAttribute('aria-invalid', message ? 'true' : 'false');
+    }
+  }
+  function lireFormulaireSprint() {
+    const capacite = sprintsUI.champCapacite.value.trim();
+    return { nom: sprintsUI.champNom.value, debut: sprintsUI.champDebut.value, fin: sprintsUI.champFin.value, capacite: capacite === '' ? NaN : Number(capacite) };
+  }
+  function afficherDureeSprint() {
+    const { debut, fin } = lireFormulaireSprint();
+    const valide = dateIsoValide(debut) && dateIsoValide(fin) && fin >= debut;
+    sprintsUI.duree.textContent = valide ? `Durée : ${pluriel(nombreDeJours(debut, fin), 'jour')} (${SPRINT_JOURS_MAX} au maximum).` : `De 1 à ${SPRINT_JOURS_MAX} jours, bornes incluses.`;
+  }
+  sprintsUI.boutonNouveau.addEventListener('click', () => {
+    const projet = projetActif();
+    sprintsUI.formulaire.reset();
+    const debut = aujourdhuiIso();
+    sprintsUI.champNom.value = `Sprint ${(projet.sprints || []).reduce((plusGrand, sprint) => Math.max(plusGrand, sprint.id), 0) + 1}`;
+    sprintsUI.champDebut.value = debut;
+    sprintsUI.champFin.value = datePlusJours(debut, 13);           // 2 semaines par défaut
+    sprintsUI.champCapacite.value = '20';
+    afficherErreursSprint({});
+    afficherDureeSprint();
+    ouvrirFenetre(sprintsUI.fenetre, sprintsUI.boutonNouveau);
+    sprintsUI.champNom.focus();
+    sprintsUI.champNom.select();
+  });
+  for (const champ of [sprintsUI.champDebut, sprintsUI.champFin]) champ.addEventListener('input', afficherDureeSprint);
+  sprintsUI.formulaire.addEventListener('input', () => {
+    // Une fois les erreurs affichées, elles se mettent à jour à chaque saisie
+    if (Object.values(CHAMPS_SPRINT).some(nom => sprintsUI[nom].getAttribute('aria-invalid') === 'true')) afficherErreursSprint(verifierSprint(lireFormulaireSprint()));
+  });
+  sprintsUI.formulaire.addEventListener('submit', evenement => {
+    evenement.preventDefault();
+    const projet = projetActif();
+    const resultat = creerSprint(projet.sprints, lireFormulaireSprint());
+    if (!resultat.ok) {
+      afficherErreursSprint(resultat.erreurs);
+      const premier = Object.keys(CHAMPS_SPRINT).find(champ => resultat.erreurs[champ]);
+      if (premier) sprintsUI[CHAMPS_SPRINT[premier]].focus();
+      return;
+    }
+    projet.sprints = resultat.sprints;
+    etat.sprintAfficheId = resultat.sprint.id;
+    fermerFenetre(sprintsUI.fenetre, sprintsUI.choix);
+    rendre();
+    notifier(`Sprint « ${resultat.sprint.nom} » créé (${resultat.sprint.capacite} points). Glissez-y des tickets estimés.`);
+  });
+
+  // Fenêtre « Clôturer le sprint »
+  sprintsUI.boutonCloturer.addEventListener('click', () => {
+    const projet = projetActif();
+    const sprint = sprintAffiche(projet);
+    if (!sprint || sprint.statut !== SPRINT_OUVERT) return;
+    const aRendre = projet.tickets.filter(ticket => ticket.sprintId === sprint.id && !estTermine(ticket));
+    const termines = projet.tickets.filter(ticket => ticket.sprintId === sprint.id && estTermine(ticket));
+    sprintsUI.texteCloture.innerHTML = `<p>${pluriel(termines.length, 'ticket')} terminé${termines.length > 1 ? 's' : ''} ${termines.length > 1 ? 'restent' : 'reste'} dans le bilan du sprint « ${echapper(sprint.nom)} ».</p>`
+      + (aRendre.length
+        ? `<p><strong>${pluriel(aRendre.length, 'ticket')} non terminé${aRendre.length > 1 ? 's' : ''} ${aRendre.length > 1 ? 'reviennent' : 'revient'} dans la colonne « ${echapper(COLONNE_BACKLOG.titre)} », hors sprint :</strong></p><ul class="sprint-cloture-liste">${aRendre.map(ticket => `<li>#${ticket.id} ${echapper(ticket.titre)}</li>`).join('')}</ul>`
+        : '<p>Tous les tickets du sprint sont terminés.</p>')
+      + '<p>Un sprint clôturé ne peut plus être modifié.</p>';
+    ouvrirFenetre(sprintsUI.fenetreCloture, sprintsUI.boutonCloturer);
+  });
+  sprintsUI.boutonConfirmerCloture.addEventListener('click', () => {
+    const projet = projetActif();
+    const sprint = sprintAffiche(projet);
+    if (!sprint) { fermerFenetre(sprintsUI.fenetreCloture); return; }
+    const resultat = cloturerSprint(projet.tickets, projet.sprints, sprint.id, aujourdhuiIso());
+    fermerFenetre(sprintsUI.fenetreCloture, sprintsUI.choix);
+    if (!resultat.ok) { notifier(resultat.erreur); return; }
+    projet.tickets = resultat.tickets;
+    projet.sprints = resultat.sprints;
+    rendre();
+    notifier(`Sprint « ${sprint.nom} » clôturé${resultat.retournes.length ? ` : ${pluriel(resultat.retournes.length, 'ticket')} ${resultat.retournes.length > 1 ? 'retournent' : 'retourne'} au backlog` : ''}.`);
+  });
+
+
+  /* ========================================================================
      JS 18 · ONGLETS BACKLOG / KANBAN
      ======================================================================== */
   function afficherVue(vue) {
@@ -3548,7 +4072,8 @@
         id: projet.id, nom: projet.nom, tickets: projet.tickets.map(ticket => ticket.id),
         ordreManuel: projet.ordreManuel ? [...projet.ordreManuel] : null,
         notesImport: projet.notesImport || {},
-        journal: projet.journal || []
+        journal: projet.journal || [],
+        sprints: (projet.sprints || []).map(sprint => ({ ...sprint, releves: { ...(sprint.releves || {}) }, bilan: sprint.bilan ? { ...sprint.bilan } : null }))
       })),
       projetActif: source.projetActifId,
       compteurs: { prochainTicket: source.prochainIdTicket, prochainProjet: source.prochainIdProjet, numerosAttribues: [...source.numerosAttribues] },
@@ -3648,7 +4173,19 @@
               ordreAffiche: Array.isArray(avant.ordreAffiche) ? avant.ordreAffiche.map(Number) : null }, apres: entree.apres });
         }
       }
-      projets.push({ id, nom, tickets: rapport.importes, ordreManuel, notesImport, journal });
+      // B1.10 · Sprints : les invalides sont écartés ; un ticket garde son sprintId seulement si ce sprint
+      // existe, et s’il est estimé quand le sprint est ouvert. Correspondance par numéro : un ticket
+      // renuméroté (numéro en double) n’a pas de correspondance sûr, il redevient hors sprint.
+      const sprints = lireSprints(projetBrut.sprints);
+      const sprintsBrutsParNumero = new Map();
+      for (const ligne of lignes) if (!sprintsBrutsParNumero.has(String(ligne.valeurs.id))) sprintsBrutsParNumero.set(String(ligne.valeurs.id), ligne.valeurs.sprintId);
+      const tickets = rapport.importes.map(ticket => {
+        const sprintId = sprintsBrutsParNumero.get(String(ticket.id));
+        const sprint = Number.isInteger(sprintId) ? sprints.find(element => element.id === sprintId) : null;
+        const garde = sprint && !(sprint.statut === SPRINT_OUVERT && ticket.points === null);
+        return garde ? { ...ticket, sprintId } : ticket;
+      });
+      projets.push({ id, nom, tickets, ordreManuel, notesImport, journal, sprints });
     });
     if (!projets.length) throw new Error('aucun projet lisible');
     const tousLesNumeros = projets.flatMap(projet => projet.tickets.map(ticket => ticket.id));
@@ -3700,8 +4237,18 @@
     };
   }
 
+  // Migration v3 → v4 (B1) : chaque ticket est hors sprint (sprintId null), chaque projet sans sprint
+  function migrerV3versV4(brut) {
+    return {
+      ...brut,
+      version: 4,
+      tickets: Array.isArray(brut.tickets) ? brut.tickets.map(ticket => (ticket && typeof ticket === 'object' ? { ...ticket, sprintId: null } : ticket)) : brut.tickets,
+      projets: Array.isArray(brut.projets) ? brut.projets.map(projet => (projet && typeof projet === 'object' ? { ...projet, sprints: [] } : projet)) : brut.projets
+    };
+  }
+
   // charger([texte]) → { origine, donnees, ... } ; ne lève JAMAIS d’exception.
-  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'illisible' | 'version-inconnue'
+  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'illisible' | 'version-inconnue'
   //   donnees : l’état à appliquer, ou null (→ démonstration)
   //   Sans argument, lit la sauvegarde de ce navigateur.
   function charger(texte) {
@@ -3713,12 +4260,16 @@
       const brut = JSON.parse(texte);
       if (!brut) return { origine: 'premier-lancement', donnees: null };
       if (Array.isArray(brut)) {
-        const lu = lireEnveloppeV2(migrerV2versV3(migrerV1versV2(brut)));
+        const lu = lireEnveloppeV2(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut))));
         return { origine: 'migration-v1', donnees: lu.donnees, nombre: brut.length };
       }
       if (typeof brut === 'object' && brut.version === 2) {
-        const lu = lireEnveloppeV2(migrerV2versV3(brut));
+        const lu = lireEnveloppeV2(migrerV3versV4(migrerV2versV3(brut)));
         return { origine: 'migration-v2', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
+      }
+      if (typeof brut === 'object' && brut.version === 3) {
+        const lu = lireEnveloppeV2(migrerV3versV4(brut));
+        return { origine: 'migration-v3', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === VERSION_SAUVEGARDE) {
         const lu = lireEnveloppeV2(brut);
@@ -3735,7 +4286,8 @@
 
   // Applique un état chargé à l’application
   function appliquerDonnees(donnees) {
-    etat.projets = donnees.projets.map(projet => ({ ...projet, tickets: [...projet.tickets] }));
+    etat.projets = donnees.projets.map(projet => ({ ...projet, tickets: [...projet.tickets], sprints: [...(projet.sprints || [])] }));
+    etat.sprintAfficheId = null;
     etat.projetActifId = donnees.projetActifId;
     etat.prochainIdTicket = donnees.prochainIdTicket;
     etat.prochainIdProjet = donnees.prochainIdProjet;
@@ -3800,6 +4352,7 @@
       'illisible': ['La sauvegarde de ce navigateur était illisible.', 'TaskFlow a redémarré avec la démonstration. Une copie de la donnée abîmée a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'version-inconnue': [`La sauvegarde vient d’une version plus récente de TaskFlow (version ${chargement.version}).`, 'Cette version ne sait pas la lire : TaskFlow a démarré avec la démonstration. Une copie a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'migration-v2': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, avec un nouveau champ «\u00a0Assigné à\u00a0», vide pour l’instant.`],
+      'migration-v3': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour : ${pluriel(chargement.nombre || 0, 'ticket')} repris. Vous pouvez maintenant planifier des sprints.`],
       'migration-v1': ['Votre sauvegarde venait d’une ancienne version de TaskFlow.', `Elle a été convertie au nouveau format\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, les champs manquants complétés par leur valeur par défaut.`]
     };
     if (chargement.origine === 'sauvegarde' && chargement.corrections) {
@@ -3807,7 +4360,7 @@
     }
     const message = messages[chargement.origine];
     page.bandeauChargement.hidden = !message;
-    page.bandeauChargement.classList.toggle('is-info', chargement.origine === 'migration-v1' || chargement.origine === 'migration-v2');
+    page.bandeauChargement.classList.toggle('is-info', /^migration-/.test(chargement.origine));
     if (message) { page.titreBandeauChargement.textContent = message[0]; page.texteBandeauChargement.textContent = message[1]; }
   }
 
@@ -3874,7 +4427,11 @@
     construireTicket, deplacerTicket, calculerStats, parserCSV, importerTickets,
     journaliser, entreeDeJournal, annulerDernierDeplacement, annulerDeplacement, replacerDansLOrdre,
     charger, enveloppeDeSauvegarde, triParDefaut, filtresVides,
+    modifierTicket, ticketsEnCsv, ticketsEnJson, analyserFichier,
+    // B1 · Sprints et burndown (JS 5b)
+    nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
     // Zone 3 · UI
+    dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
   });
   demarrer();
