@@ -288,3 +288,135 @@ Contrôles de `deplacerTicket` dans cet ordre : R2 (Definition of Ready), **R6 (
 - **Modèle de ticket** : 10 champs. Les tests qui vérifient la liste exacte des champs (T9, T11, T27) attendent `…, sprintId, bloquePar`.
 - **Sauvegarde** : version 4 → 5 (`VERSION_SAUVEGARDE = 5`). Une sauvegarde v4 devient une migration (`migration-v4`) : les tests de B1.7 qui supposaient « v4 = version actuelle » (T27 : constante, sauvegarde abîmée en v4, « version 5 inconnue ») doivent suivre.
 - **`deplacerTicket`** : nouvelle règle R6. R1 à R5 inchangées ; un ticket sans bloquant se déplace exactement comme avant.
+
+---
+
+## B3 · Échéances et calendrier
+
+- **Sujet** : `echeances`
+- **Demande** : « Échéances & calendrier (Anticiper). Date d'échéance, badges "En retard" et "J-2". Tri et filtre par urgence. Vue calendrier mensuelle, mois par mois. Résumé des retards par colonne. La règle qui piège : mois numérotés de 0 à 11, "31 janvier + 1 mois", et la date du jour à injecter pour pouvoir tester. Données : `ticket.echeance = null`. »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+L'équipe veut savoir ce qui est en retard ou va l'être, le traiter en premier, et voir les échéances du mois d'un coup d'œil.
+
+### Données
+
+**Ticket** : un 11e champ, **`echeance`**, après `bloquePar` : une date `AAAA-MM-JJ`, ou `null` (pas d'échéance).
+Ordre des champs : `id, titre, type, priorite, points, statut, creeLe, assigne, sprintId, bloquePar, echeance`.
+
+**Définitions**
+- **Jours restants** = nombre de jours calendaires de la date du jour jusqu'à l'échéance (négatif si elle est passée). Le calcul se fait en UTC : il ne dépend ni du fuseau horaire ni du changement d'heure.
+- Un ticket **terminé** (dernière colonne) n'est jamais en retard.
+- **Mois** : toujours écrit `AAAA-MM` avec un mois de **01 à 12** (jamais l'indice 0–11 de JavaScript, qui ne sort pas des fonctions).
+- **Date du jour injectée** : toute règle qui dépend du jour le reçoit en paramètre `aujourdhui` (`AAAA-MM-JJ`) ; aucune ne lit l'horloge elle-même.
+
+### Critères d'acceptation (8)
+
+Fonctions pures (zone 2), tableaux reçus jamais modifiés (R4), erreurs renvoyées et jamais levées.
+
+#### B3.1 · Échéance d'un ticket — `construireTicket`, `modifierTicket`
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | `construireTicket` sans échéance, ou avec une valeur qui n'est pas une chaîne | `echeance: null`, 11e et dernier champ |
+| b | `modifierTicket(…, { echeance: '2026-11-20' })` | accepté (contrairement à `sprintId` et `bloquePar`, l'échéance se modifie ici) |
+| c | `modifierTicket(…, { echeance: '2026-02-30' })` | erreur `echeance` : `L’échéance doit être une date au format AAAA-MM-JJ, ou vide.` |
+| d | `modifierTicket(…, { echeance: null })` | l'échéance est retirée |
+
+#### B3.2 · Urgence et badges — `urgence(ticket, aujourdhui)`
+
+Renvoie `{ niveau, jours, libelle }`.
+
+| Cas | Étant donné (aujourd'hui = 2026-11-04) | Alors |
+|---|---|---|
+| a | échéance 2026-11-01, ticket non terminé | `{ niveau: 'retard', jours: -3, libelle: 'En retard' }` |
+| b | échéance 2026-11-04 | `{ niveau: 'aujourdhui', jours: 0, libelle: 'Aujourd’hui' }` |
+| c | échéance 2026-11-05 / 2026-11-06 | `{ niveau: 'proche', jours: 1, libelle: 'J-1' }` / `{ niveau: 'proche', jours: 2, libelle: 'J-2' }` |
+| d | échéance 2026-11-07 | `{ niveau: 'plus-tard', jours: 3, libelle: '' }` |
+| e | pas d'échéance | `{ niveau: 'aucune', jours: null, libelle: '' }` |
+| f | échéance passée, ticket **terminé** | `{ niveau: 'terminee', jours: -3, libelle: '' }` (jamais en retard) |
+| g | **date du jour injectée** : même ticket (échéance 2026-03-01), aujourd'hui 2026-02-27 puis 2026-03-02 | `J-2` (février 2026 a 28 jours), puis `En retard` (`jours: -1`) |
+| h | échéance 2026-03-31, aujourd'hui 2026-03-29 (passage à l'heure d'été) | `jours: 2` |
+
+#### B3.3 · Trier et filtrer par urgence — `creerComparateur`, `correspondAUrgence(ticket, urgences, aujourdhui)`
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | tri `[{ critere: 'echeance', sens: 'asc' }]` | la plus proche (la plus en retard) d'abord ; **les tickets sans échéance toujours en dernier** |
+| b | même tri, `sens: 'desc'` | la plus lointaine d'abord ; sans échéance toujours en dernier |
+| c | filtre `retard` | seulement les tickets de niveau `retard` |
+| d | filtre `proche` | niveaux `aujourdhui` et `proche` (de 0 à 2 jours) |
+| e | filtre `sans` | seulement les tickets sans échéance |
+| f | plusieurs valeurs (`retard` + `proche`) | un ticket passe s'il correspond à l'une d'elles ; aucune valeur = tous passent |
+
+Le critère « Échéance » apparaît dans le panneau Tri, le groupe de filtres « Urgence » (En retard, Bientôt (J-2), Sans échéance) dans le panneau Filtres ; ce filtre est sauvegardé comme les autres.
+
+#### B3.4 · Ajouter des mois à une date — `ajouterMois(dateIso, nombre)` (la règle qui piège)
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | **2026-01-31 + 1 mois** | `2026-02-28` (dernier jour de février ; jamais le 3 mars) |
+| b | 2028-01-31 + 1 | `2028-02-29` (année bissextile) |
+| c | 2026-03-31 − 1 | `2026-02-28` |
+| d | 2026-12-15 + 1 | `2027-01-15` (changement d'année) |
+| e | 2026-01-15 − 1 / + 12 | `2025-12-15` / `2027-01-15` |
+| f | 2026-05-31 + 1 | `2026-06-30` |
+
+#### B3.5 · Grille du calendrier mensuel — `grilleDuMois(mois, tickets)`
+
+Renvoie `{ mois, semaines }` : des semaines de 7 cases **du lundi au dimanche**, chaque case `{ date, dansLeMois, tickets }` (`tickets` : numéros des tickets dont l'échéance tombe ce jour-là, dans l'ordre de la liste reçue). La grille commence le lundi qui précède (ou qui est) le 1er du mois, et finit le dimanche qui suit (ou qui est) le dernier jour.
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | `'2026-02'` (le 1er est un dimanche) | 5 semaines, du `2026-01-26` au `2026-03-01` ; 28 cases `dansLeMois` |
+| b | `'2026-06'` (le 1er est un lundi) | commence le `2026-06-01`, finit le `2026-07-05` |
+| c | `'2026-11'` | 6 semaines, du `2026-10-26` au `2026-12-06` ; 30 cases `dansLeMois` |
+| d | **`'2026-12'`** | décembre (31 cases `dansLeMois`), et non janvier : le mois est numéroté de 01 à 12 |
+| e | ticket avec échéance 2026-11-20, et un ticket sans échéance | le premier est dans la case du 20 novembre ; le second dans aucune case |
+| f | `'2026-13'`, `'2026-00'`, `'novembre'` | `null` |
+
+Navigation : « Mois précédent / suivant » passe de `AAAA-MM` à `AAAA-MM` (`janvier 2027` après `décembre 2026`), « Aujourd'hui » revient au mois de la date du jour.
+
+#### B3.6 · Résumé des retards par colonne — `resumeDesRetards(tickets, aujourdhui)`
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | 2 tickets en retard « À faire », 1 « En cours », 1 en retard mais « Terminé », 1 à J-1 | `{ total: 3, colonnes: [{ id, titre, nombre }…] }` avec Backlog 0, À faire 2, En cours 1, En revue 0 |
+| b | — | une entrée par colonne sauf la dernière (« Terminé »), dans l'ordre de `COLONNES` |
+| c | aucun retard | `total: 0` |
+
+#### B3.7 · Sauvegarde v6 (« sauvegarde d'hier » en v5), import et export
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | aller-retour d'une sauvegarde avec échéances et filtre « Urgence » | `origine: 'sauvegarde'` ; `echeance` et filtre identiques |
+| b | **sauvegarde version 5** (sprints, bloquants) | `origine: 'migration-v5'` ; `echeance: null` partout ; **sprints, `sprintId` et `bloquePar` conservés** |
+| c | sauvegardes v1 à v4 | toujours migrées ; tickets à 11 champs |
+| d | v6 abîmée : échéance invalide (« 2026-02-30 », 12) | `echeance: null`, rien ne plante |
+| e | version 7 | `origine: 'version-inconnue'` |
+| f | export CSV ou JSON | colonnes inchangées (pas d'`echeance`) |
+| g | import d'un fichier avec une colonne `echeance` | `echeance: null` ; colonne signalée « hors du modèle, ignorée » |
+
+#### B3.8 · Interface (vérifiée à la main)
+
+- Formulaire : champ **« Échéance »** (date, facultatif) avec l'erreur de B3.1.
+- Liste et Kanban : badges **« En retard »** (rouge), **« Aujourd’hui »**, **« J-1 »**, **« J-2 »** (ambre), sinon la date en discret ; rien pour un ticket terminé.
+- Panneau Tri : critère **« Échéance »** ; panneau Filtres : groupe **« Urgence »**.
+- Onglet **« Calendrier »** (3e vue) : grille du mois, lundi en premier, tickets dans la case de leur échéance, boutons mois précédent / suivant / aujourd'hui.
+- **Résumé des retards** au-dessus des vues (« 3 tickets en retard : À faire 2 · En cours 1 »), masqué s'il n'y en a pas ; nombre de retards en tête de chaque colonne du Kanban.
+- **Date du jour injectable** pour tester l'interface : `index.html?aujourdhui=2026-02-27`.
+
+### Hors périmètre
+
+- Import / export des échéances ; rappels ou notifications.
+- Glisser un ticket dans le calendrier pour changer son échéance.
+- Semaines commençant le dimanche ; jours fériés.
+
+### Impacts sur l'existant
+
+- **Modèle de ticket** : 11 champs. Les tests qui vérifient la liste exacte des champs (T9, T11, T27) attendent `…, bloquePar, echeance`.
+- **Sauvegarde** : version 5 → 6 (`VERSION_SAUVEGARDE = 6`) ; une sauvegarde v5 devient une migration (`migration-v5`).
+- **Vue** : `vue` peut valoir `'calendrier'` (sauvegardée et rechargée comme `'backlog'` et `'kanban'`).
+- **Filtres** : nouveau groupe `urgences` (vide par défaut).
