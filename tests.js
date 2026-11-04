@@ -324,11 +324,65 @@
       return etapeEchouee
         ? { reussi: false, detail: `Échec, attendu : ${etapeEchouee[0]}. Obtenu : ${[r1, r2, r3].map(r => (r.ok ? 'ok' : r.erreur)).join(' / ')}` }
         : { reussi: true, detail: `Ancien déplacement annulé seul ; même ticket : ${r2.annules.length} annulés ensemble ; colonne pleine : « ${r3.erreur} » ; place d’avant retrouvée` };
+    } },
+
+    /* ---------- Audit des cas limites (Testeur-QA) ----------
+       Résultats attendus tirés de docs/regles-metier.md et docs/import-export.md. */
+
+    // docs/regles-metier.md : « Liste invalide → Liste de tickets invalide » ; une erreur est renvoyée, jamais levée
+    { code: 'T13', groupe: 'audit', nom: 'Audit · deplacerTicket : un élément vide dans la liste → « Liste de tickets invalide », sans planter', executer() {
+      const essayer = (depart, vers) => { try { return deplacerTicket(depart, 1, vers); } catch (erreur) { return { exception: erreur.message }; } };
+      const versColonneLibre = essayer(gelerEnProfondeur([null, ticketDeTest(1, COLONNE_BACKLOG.id, 3)]), COLONNE_SUIVANTE.id);
+      const versColonneLimitee = COLONNE_LIMITEE ? essayer(gelerEnProfondeur([ticketDeTest(1, COLONNE_SUIVANTE.id, 3), null]), COLONNE_LIMITEE.id) : versColonneLibre;
+      const etapes = [
+        [`vers « ${COLONNE_SUIVANTE.titre} » (sans limite) : refus « Liste de tickets invalide », sans exception`, versColonneLibre.ok === false && versColonneLibre.erreur === 'Liste de tickets invalide'],
+        [`vers « ${COLONNE_LIMITEE ? COLONNE_LIMITEE.titre : ''} » (limite WIP) : refus « Liste de tickets invalide », sans exception`, versColonneLimitee.ok === false && versColonneLimitee.erreur === 'Liste de tickets invalide']
+      ];
+      const etapeEchouee = etapes.find(([, valide]) => !valide);
+      return etapeEchouee
+        ? { reussi: false, detail: `Échec, attendu : ${etapeEchouee[0]}. Obtenu : ${JSON.stringify({ versColonneLibre, versColonneLimitee })}` }
+        : { reussi: true, detail: `Liste [null, ticket] : « ${versColonneLibre.erreur} », vers une colonne libre comme vers une colonne limitée` };
+    } },
+
+    // docs/regles-metier.md : « Déjà dans la colonne → accepté, copie du tableau » (contrôlé avant R1)
+    { code: 'T14', groupe: 'audit', nom: COLONNE_LIMITEE ? `Audit · deplacerTicket : rester dans « ${COLONNE_LIMITEE.titre} » pleine (${LIMITE_WIP}/${LIMITE_WIP}) est accepté` : 'Audit · rester dans sa colonne', executer() {
+      if (!COLONNE_LIMITEE) return { reussi: false, detail: 'Il faut une colonne limitée dans COLONNES' };
+      const depart = gelerEnProfondeur(Array.from({ length: LIMITE_WIP }, (_, rang) => ticketDeTest(1 + rang, COLONNE_LIMITEE.id, 2)));
+      const resultat = deplacerTicket(depart, 1, COLONNE_LIMITEE.id);
+      const reussi = resultat.ok === true && resultat.tickets !== depart && resultat.tickets.length === LIMITE_WIP
+        && resultat.tickets.every(ticket => ticket.statut === COLONNE_LIMITEE.id) && estPleineSelonLesStats(resultat.tickets) === true;
+      return { reussi, detail: reussi ? `Colonne à ${LIMITE_WIP}/${LIMITE_WIP} : le ticket #1 y reste, ok: true, nouveau tableau (pas de « WIP atteint »)` : `Échec, attendu : ok: true et un nouveau tableau. Obtenu : ${JSON.stringify(resultat)}` };
+    } },
+
+    // docs/import-export.md : « Colonne pleine (R1) → colonne précédente », chaque correction expliquée.
+    // T7 couvre une colonne déjà pleine AVANT l’import ; ici, c’est le fichier lui-même qui la remplit.
+    { code: 'T15', groupe: 'audit', nom: 'Audit · importerTickets : la colonne limitée remplie par le fichier lui-même → le surplus va dans la colonne précédente', executer() {
+      if (!COLONNE_LIMITEE) return { reussi: false, detail: 'Il faut une colonne limitée dans COLONNES' };
+      const precedente = COLONNES[COLONNES.indexOf(COLONNE_LIMITEE) - 1];
+      const existants = gelerEnProfondeur([ticketDeTest(1, COLONNE_LIMITEE.id, 2)]);          // 1 place prise sur LIMITE_WIP
+      const nombreDeLignes = LIMITE_WIP + 1;                                                // de quoi déborder de 2
+      const fichier = ['titre,points,statut', ...Array.from({ length: nombreDeLignes }, (_, rang) => `Ticket importé ${rang + 1},3,${COLONNE_LIMITEE.id}`)].join('\n');
+      const rapport = importerTickets(gelerEnProfondeur(parserCSV(fichier)), existants, { dateDuJour: '2026-11-03' });
+      const dansLaLimitee = rapport.importes.filter(ticket => ticket.statut === COLONNE_LIMITEE.id);
+      const deplaces = rapport.importes.filter(ticket => ticket.statut === precedente.id);
+      const placesLibres = LIMITE_WIP - 1;
+      const corrections = rapport.ajustements.flatMap(ligne => ligne.details.filter(detail => detail.nature === 'correction').map(detail => detail.texte));
+      const etapes = [
+        [`bilan « ${nombreDeLignes} importés · 0 rejeté »`, rapport.bilan === `${nombreDeLignes} importés · 0 rejeté` && !rapport.rejets.length],
+        [`${placesLibres} tickets entrent dans « ${COLONNE_LIMITEE.titre} » (jusqu’à ${LIMITE_WIP}/${LIMITE_WIP})`, dansLaLimitee.length === placesLibres],
+        [`les ${nombreDeLignes - placesLibres} suivants vont dans « ${precedente.titre} »`, deplaces.length === nombreDeLignes - placesLibres],
+        ['chaque ticket déplacé a une correction « WIP atteint … » expliquée', corrections.filter(texte => /^WIP atteint/.test(texte)).length === nombreDeLignes - placesLibres],
+        ['le ticket existant reste intact', existants.length === 1 && existants[0].statut === COLONNE_LIMITEE.id]
+      ];
+      const etapeEchouee = etapes.find(([, valide]) => !valide);
+      return etapeEchouee
+        ? { reussi: false, detail: `Échec, attendu : ${etapeEchouee[0]}. Obtenu : « ${rapport.bilan} » ; ${JSON.stringify(rapport.importes.map(ticket => [ticket.titre, ticket.statut]))}` }
+        : { reussi: true, detail: `« ${rapport.bilan} » ; ${placesLibres} dans « ${COLONNE_LIMITEE.titre} », ${deplaces.length} dans « ${precedente.titre} » avec « ${corrections.find(texte => /^WIP/.test(texte))} »` };
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
