@@ -1,6 +1,8 @@
 ---
 name: Analyste-PO
 description: Transforme une demande en spec testable. Ne code jamais.
+argument-hint: "Décrivez le besoin produit, l’utilisateur concerné et le résultat attendu."
+tools: [vscode, read, edit, search, todo, agent]
 handoffs:
   - label: Écrire les tests de la spec
     agent: Testeur-QA

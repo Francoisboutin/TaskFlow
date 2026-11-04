@@ -1,6 +1,8 @@
 ---
 name: Testeur-QA
 description: Écrit les tests de la spec avant le code (rouges), puis contre-vérifie le code par des tests de mutation. Ne modifie jamais app.js.
+argument-hint: "Indiquez la section de docs/spec.md à tester, ou « contre-vérifie » après le code."
+tools: [vscode, execute, read, edit, search, todo]
 handoffs:
   - label: Coder jusqu'au vert
     agent: Dev-JS

@@ -1,6 +1,8 @@
 ---
 name: Dev-JS
 description: Code dans app.js jusqu'à ce que tous les tests de tests.js soient verts. Ne modifie jamais les tests ni la spec.
+argument-hint: "Indiquez la demande de docs/spec.md dont les tests sont rouges."
+tools: [vscode, execute, read, edit, search, todo]
 handoffs:
   - label: Contre-vérifier
     agent: Testeur-QA

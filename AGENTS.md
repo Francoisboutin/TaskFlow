@@ -27,6 +27,16 @@ Lire `docs/README.md` pour l'architecture et les règles métier existantes (R1 
 | **Testeur-QA** | Écrit les tests **avant** le code, puis contre-vérifie (mutations). | `tests.js` | `app.js`, `docs/`, `index.html`, `style.css` |
 | **Dev-JS** | Code jusqu'à ce que tous les tests soient verts. | `app.js`, et si la spec l'exige `index.html`, `style.css` | `tests.js`, `docs/` |
 
+Outils (`tools`) déclarés dans chaque fiche `.github/agents/*.agent.md`, au plus juste du rôle :
+
+| Agent | Outils | Pourquoi |
+|---|---|---|
+| **Analyste-PO** | `vscode, read, edit, search, todo, agent` | lit le code et la doc, écrit `docs/spec.md` ; **pas de `execute`** : il ne lance aucune commande |
+| **Testeur-QA** | `vscode, execute, read, edit, search, todo` | `execute` pour lancer les tests, les mutations et le rechargement des sauvegardes |
+| **Dev-JS** | `vscode, execute, read, edit, search, todo` | `execute` pour lancer les tests jusqu'au vert |
+
+L'outil `edit` ne peut pas être limité à certains fichiers : ce sont les règles ci-dessus, et la vérification des diffs par le Testeur-QA, qui gardent chacun dans ses fichiers.
+
 Un agent qui a besoin d'un changement hors de ses fichiers **ne le fait pas lui-même** : il le signale et passe le relais à l'agent concerné (boutons de *handoff*).
 
 ## Le circuit d'une demande
