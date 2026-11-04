@@ -14,7 +14,7 @@
      JS 4   Règles métier : fonctions pures (deplacerTicket, modifierTicket, calculerStats)
      JS 5   Import et export : fonctions pures (CSV, JSON)
      JS 5b  Sprints et burndown : fonctions pures (B1) ; sprints en cours et tickets du Kanban (B5) ; démarrage (B6)
-     JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2)
+     JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2) ; listes des bloquants (B8)
      JS 5d  Échéances et calendrier : fonctions pures (B3)
    ── Zone 3 · UI
      JS 6   État de l’application et actions sur les données
@@ -1206,11 +1206,27 @@
     });
   }
 
-  // Lit le champ « Bloqué par » du formulaire : « 3, #5 » → [3, 5] ; null si le texte n’est pas une liste de numéros
-  function lireNumerosDeBloquants(texte) {
-    const morceaux = String(texte || '').split(/[\s,;]+/).map(morceau => morceau.replace(/^#/, '')).filter(Boolean);
-    return morceaux.every(morceau => /^\d{1,6}$/.test(morceau)) ? morceaux.map(Number) : null;
+  // B8.1 · Les bloquants d’un ticket, dans l’ordre de déclaration : [{ id, titre, statut, termine }] ; inconnus ignorés
+  function listeDesBloquants(ticket, tickets) {
+    const liste = Array.isArray(tickets) ? tickets : [];
+    return (ticket && Array.isArray(ticket.bloquePar) ? ticket.bloquePar : [])
+      .map(numero => liste.find(element => element && element.id === numero)).filter(Boolean)
+      .map(bloquant => ({ id: bloquant.id, titre: bloquant.titre, statut: bloquant.statut, termine: estTermine(bloquant) }));
   }
+  // B8.4 et B8.5 · Choix du formulaire : tous les autres tickets, triés par numéro → [{ id, titre, statut, choisi, possible, raison }]
+  // Un choix qui fermerait un cycle est impossible ; raison = le message de definirBloquants (le cycle). id null = nouveau ticket.
+  function choixDeBloquants(tickets, id) {
+    const liste = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
+    const ticket = id === null ? null : liste.find(element => element.id === id) || null;
+    const choisis = ticket && Array.isArray(ticket.bloquePar) ? ticket.bloquePar : [];
+    return liste.filter(element => element.id !== id).sort((a, b) => a.id - b.id).map(candidat => {
+      const choisi = choisis.includes(candidat.id);
+      const essai = ticket && !choisi ? definirBloquants(liste, id, [candidat.id]) : { ok: true };
+      return { id: candidat.id, titre: candidat.titre, statut: candidat.statut, choisi, possible: essai.ok, raison: essai.ok ? '' : essai.erreur };
+    });
+  }
+  // B8.6 · Résumé de la liste du formulaire : « Aucun », « 1 ticket : #4 », « 2 tickets : #4, #6 »
+  const resumeDesBloquantsChoisis = numeros => (numeros.length ? `${pluriel(numeros.length, 'ticket')}\u00a0: ${numeros.map(numero => `#${numero}`).join(', ')}` : 'Aucun');
 
   /* ========================================================================
      JS 5d · ÉCHÉANCES ET CALENDRIER — FONCTIONS PURES (B3, docs/spec.md)
@@ -1918,13 +1934,13 @@
     return `<span class="assigne${moi ? ' is-moi' : ''}" title="Assigné à ${echapper(ticket.assigne)}">${ICONE_PERSONNE}${echapper(ticket.assigne)}${moi ? ' (vous)' : ''}</span>`;
   }
 
-  // Badge 🔒 (B2.5) : les bloquants actifs du ticket, avec leurs titres au survol
-  function htmlBloquants(ticket) {
-    const tickets = projetActif().tickets;
+  // B8.2 · Badge 🔒 déroulant : « Bloqué par N » (N bloquants actifs) ; un bouton par bloquant ouvre sa fiche
+  function htmlBloquants(ticket, tickets = projetActif().tickets) {
     const actifs = bloquantsActifs(ticket, tickets);
     if (!actifs.length) return '';
-    const detail = actifs.map(numero => { const bloquant = tickets.find(element => element.id === numero); return `#${numero} «\u00a0${bloquant.titre}\u00a0» (${libelleDe(STATUTS, bloquant.statut)})`; }).join(', ');
-    return `<span class="bloque" title="Bloqué par ${echapper(detail)}">${ICONE_CADENAS}<span class="sr-only">Bloqué par </span>${actifs.map(numero => `#${numero}`).join(', ')}</span>`;
+    const boutons = listeDesBloquants(ticket, tickets).map(bloquant => `<li><button type="button" class="bloque-ticket${bloquant.termine ? ' is-termine' : ''}" data-modifier="${bloquant.id}" aria-label="Ouvrir le ticket #${bloquant.id}">`
+      + `<span class="bloque-num">#${bloquant.id}</span> ${echapper(bloquant.titre)} · ${echapper(libelleDe(STATUTS, bloquant.statut))}${bloquant.termine ? ' <span class="bloque-fini">(terminé)</span>' : ''}</button></li>`).join('');
+    return `<details class="bloque"><summary title="Voir les tickets qui bloquent #${ticket.id}">${ICONE_CADENAS}Bloqué par ${actifs.length}</summary><ul class="bloque-liste">${boutons}</ul></details>`;
   }
 
   // Mention « Corrigé à l’import » : un bouton qui ouvre la liste des corrections du ticket
@@ -2525,9 +2541,9 @@
       cocher('points', clePoints(ticketAModifier.points));
       page.champStatut.value = ticketAModifier.statut;
       trouver('#f-assigne').value = ticketAModifier.assigne || '';
-      trouver('#f-bloque').value = (ticketAModifier.bloquePar || []).join(', ');
       trouver('#f-echeance').value = ticketAModifier.echeance || '';
     }
+    remplirChoixBloquants(enModification ? ticketAModifier.id : null);   // B8.4
     const note = enModification ? noteImportDe(ticketAModifier.id) : null;
     page.blocNoteFormulaire.hidden = !note;
     page.caseNoteFormulaire.checked = false;
@@ -2536,6 +2552,21 @@
     ouvrirFenetre(page.fenetreTicket, boutonDeclencheur);
     page.champTitre.focus();
   }
+
+  // B8.4 à B8.6 · Liste déroulante « Bloqué par » : tous les autres tickets ; ceux qui créeraient un cycle sont grisés
+  function remplirChoixBloquants(id) {
+    const choix = choixDeBloquants(projetActif().tickets, id);
+    trouver('#f-bloque-liste').innerHTML = choix.length
+      ? choix.map(element => `<label class="choix-bloquant${element.possible ? '' : ' is-impossible'}"${element.possible ? '' : ` title="${echapper(element.raison)}"`}>`
+        + `<input type="checkbox" name="bloquePar" value="${element.id}"${element.choisi ? ' checked' : ''}${element.possible ? '' : ' disabled'}>`
+        + `<span><strong>#${element.id}</strong> ${echapper(element.titre)} · ${echapper(libelleDe(STATUTS, element.statut))}${element.possible ? '' : `<small>${echapper(element.raison)}</small>`}</span></label>`).join('')
+      : '<p class="aide">Aucun autre ticket dans ce projet.</p>';
+    trouver('#f-bloque').open = false;
+    majResumeDesBloquants();
+  }
+  const numerosDeBloquantsCoches = () => [...trouverTous('#f-bloque-liste input:checked')].map(caseACocher => Number(caseACocher.value));
+  function majResumeDesBloquants() { trouver('#f-bloque-resume').textContent = resumeDesBloquantsChoisis(numerosDeBloquantsCoches()); }
+  trouver('#f-bloque-liste').addEventListener('change', majResumeDesBloquants);
 
   // Lit le formulaire et convertit les valeurs dans les types du modèle (nombres, null)
   function lireFormulaire() {
@@ -2549,7 +2580,7 @@
       points: points === NON_ESTIME ? null : points === null ? undefined : Number(points),   // « 4 » reste 4 : refusé par validerTicket
       statut: donnees.get('statut'),
       assigne: String(donnees.get('assigne') ?? '').trim() || null,
-      bloquePar: lireNumerosDeBloquants(donnees.get('bloquePar')),   // null si le texte n’est pas une liste de numéros
+      bloquePar: donnees.getAll('bloquePar').map(Number),          // B8 : cases cochées de la liste « Bloqué par »
       echeance: String(donnees.get('echeance') ?? '').trim() || null
     };
   }
@@ -2571,6 +2602,7 @@
       const erreurs = resultat.erreurs;
       for (const champ of CHAMPS_AVEC_ERREUR) afficherErreur(champ, erreurs[champ]);
       if (erreurs.id || erreurs.creeLe) afficherErreur('global', erreurs.id || erreurs.creeLe);
+      if (erreurs.bloquePar) trouver('#f-bloque').open = true;
       mettreAJourCompteurTitre();
       // Le focus va sur le premier champ en erreur
       const premierChamp = CHAMPS_AVEC_ERREUR.find(champ => erreurs[champ]);
@@ -4951,6 +4983,8 @@
     nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
     // B2 · Dépendances et blocages (JS 5c)
     definirBloquants, bloquantsActifs, retirerDesBloquants,
+    // B8 · Listes déroulantes des bloquants (JS 5c, JS 10)
+    listeDesBloquants, choixDeBloquants, resumeDesBloquantsChoisis,
     // B3 · Échéances et calendrier (JS 5d, et le tri de JS 8)
     urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
     // B5 · Kanban du sprint en cours (JS 5b)
@@ -4958,7 +4992,7 @@
     // B6 · Démarrage d’un sprint (JS 5b)
     demarrerSprints, aFaireSiSprintDemarre,
     // Zone 3 · UI
-    dessinerBurndown, htmlTicketDeSprint,
+    dessinerBurndown, htmlTicketDeSprint, htmlBloquants,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
   });
   demarrer();

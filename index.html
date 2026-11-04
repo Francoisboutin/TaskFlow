@@ -529,9 +529,13 @@
       </div>
       <!-- bloquePar : facultatif (v5, B2) ; cycles et numéros inconnus refusés -->
       <div class="champ">
-        <label for="f-bloque">Bloqué par <span class="oblig">(facultatif)</span></label>
-        <input id="f-bloque" name="bloquePar" class="input" type="text" inputmode="numeric" autocomplete="off" placeholder="ex.&nbsp;: 3, 5" aria-describedby="f-bloque-aide err-bloquePar">
-        <div class="champ-pied"><span id="f-bloque-aide">Numéros des tickets à terminer avant de commencer celui-ci, séparés par des virgules. Tant qu’ils ne sont pas terminés, il ne peut pas entrer «&nbsp;En cours&nbsp;».</span></div>
+        <span class="champ-titre" id="f-bloque-titre">Bloqué par <span class="oblig">(facultatif)</span></span>
+        <!-- B8 : liste déroulante des autres tickets du projet ; ceux qui créeraient un cycle sont grisés -->
+        <details class="choix-bloquants" id="f-bloque">
+          <summary class="input" aria-describedby="f-bloque-aide err-bloquePar"><span class="sr-only">Bloqué par : </span><span id="f-bloque-resume">Aucun</span></summary>
+          <div class="choix-bloquants-liste" id="f-bloque-liste" role="group" aria-labelledby="f-bloque-titre"></div>
+        </details>
+        <div class="champ-pied"><span id="f-bloque-aide">Cochez les tickets à terminer avant de commencer celui-ci. Tant qu’ils ne sont pas terminés, il ne peut pas entrer «&nbsp;En cours&nbsp;».</span></div>
         <p class="erreur" id="err-bloquePar" hidden></p>
       </div>
       <!-- echeance : facultatif (v6, B3) -->

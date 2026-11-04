@@ -655,8 +655,19 @@ mark { background: var(--surlignage); color: inherit; border-radius: 3px; paddin
 .assigne svg { width: 13px; height: 13px; flex: none; }
 .assigne.is-moi { color: var(--bleu); }
 /* B2 · Badge 🔒 : le ticket attend des tickets non terminés (ses bloquants actifs) */
-.bloque { display: flex; align-items: center; gap: 5px; width: fit-content; margin-top: 4px; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--ambre-pale); color: var(--ambre); font-size: .8rem; font-weight: 700; cursor: help; }
+/* B8 · Badge cadenas déroulant : le résumé est la pastille, la liste des bloquants se déplie dessous */
+.bloque { width: fit-content; max-width: 100%; margin-top: 4px; }
+.bloque > summary { display: flex; align-items: center; gap: 5px; width: fit-content; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--ambre-pale); color: var(--ambre); font-size: .8rem; font-weight: 700; cursor: pointer; list-style: none; }
+.bloque > summary::-webkit-details-marker { display: none; }
+.bloque > summary::after { content: "▾"; font-size: .75rem; }
+.bloque[open] > summary::after { content: "▴"; }
 .bloque svg { width: 13px; height: 13px; flex: none; }
+.bloque-liste { display: grid; gap: 2px; margin: 4px 0 0; padding: 4px; border: 1px solid var(--trait); border-radius: 10px; background: var(--surface); list-style: none; box-shadow: 0 6px 18px rgba(12, 20, 38, .1); }
+.bloque-ticket { display: block; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; background: none; color: var(--encre); font: inherit; font-size: .84rem; text-align: left; cursor: pointer; }
+.bloque-ticket:hover, .bloque-ticket:focus-visible { background: var(--bleu-pale); color: var(--bleu); }
+.bloque-ticket.is-termine { color: var(--encre-3); }
+.bloque-num { font-weight: 700; }
+.bloque-fini { color: var(--vert); font-size: .78rem; }
 .kb-carte .assigne { margin-top: -4px; }
 .mes-tickets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .mes-tickets label { font-size: .9rem; color: var(--encre-2); }
@@ -1389,3 +1400,16 @@ dialog::backdrop { background: rgba(10, 16, 30, .58); }
   .sprint-carac { grid-column: 2; grid-row: 2; justify-content: flex-start; }
   .sprint-btn { grid-column: 3; grid-row: 1; }
 }
+
+/* B8 · « Bloqué par » du formulaire : liste déroulante à cases */
+.champ-titre { display: block; margin-bottom: 8px; font-weight: 700; }
+.choix-bloquants > summary { display: flex; align-items: center; justify-content: space-between; width: 100%; cursor: pointer; list-style: none; }
+.choix-bloquants > summary::-webkit-details-marker { display: none; }
+.choix-bloquants > summary::after { content: "▾"; color: var(--encre-3); }
+.choix-bloquants[open] > summary::after { content: "▴"; }
+.choix-bloquants-liste { display: grid; gap: 2px; max-height: 240px; margin-top: 6px; padding: 6px; overflow-y: auto; border: 1px solid var(--trait-2); border-radius: 10px; background: var(--surface); }
+.choix-bloquant { display: flex; align-items: flex-start; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: .9rem; cursor: pointer; }
+.choix-bloquant:hover { background: var(--surface-2); }
+.choix-bloquant input { margin-top: 3px; }
+.choix-bloquant small { display: block; color: var(--rouge); font-size: .78rem; }
+.choix-bloquant.is-impossible { color: var(--encre-3); cursor: not-allowed; }
