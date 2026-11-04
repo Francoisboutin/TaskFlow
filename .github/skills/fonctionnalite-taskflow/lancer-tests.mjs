@@ -112,7 +112,9 @@ if (args[0] === '--sauvegarde') {
     var d = { injectee: window.__sauvegardeInjectee === true, illisible: localStorage.getItem('taskflow-illisible') !== null, versionApp: window.TaskFlow && window.TaskFlow.VERSION_SAUVEGARDE };
     try { var s = JSON.parse(localStorage.getItem('taskflow')); d.version = s.version; d.tickets = s.tickets.length;
       d.projets = s.projets.map(function (p) { return p.nom + ' (' + p.tickets.length + ' tickets)'; });
-      d.vue = s.affichage && s.affichage.vue; d.utilisateur = s.affichage && s.affichage.utilisateur; }
+      d.vue = s.affichage && s.affichage.vue; d.utilisateur = s.affichage && s.affichage.utilisateur;
+      d.sprints = s.projets.reduce(function (n, p) { return n + (Array.isArray(p.sprints) ? p.sprints.length : 0); }, 0);
+      d.ticketsEnSprint = s.tickets.filter(function (t) { return t.sprintId; }).length; }
     catch (e) { d.erreur = String(e); }
     var b = document.getElementById('bandeau-chargement');
     d.bandeau = b && !b.hidden ? (document.getElementById('bandeau-chargement-titre').textContent + ' ' + document.getElementById('bandeau-chargement-texte').textContent) : '';
@@ -143,6 +145,14 @@ if (args[0] === '--sauvegarde') {
     [`réécrite dans la version actuelle (v${d.versionApp})`, d.version !== undefined && d.version === d.versionApp],
     [`aucun ticket perdu (${ticketsAvant} avant, ${d.tickets} après)`, d.tickets === ticketsAvant]
   ];
+  // Depuis la v4, une sauvegarde contient des sprints : ils doivent survivre aux migrations suivantes
+  const projetsAvant = !Array.isArray(avant) && Array.isArray(avant.projets) ? avant.projets : [];
+  const sprintsAvant = projetsAvant.reduce((total, projet) => total + (Array.isArray(projet.sprints) ? projet.sprints.length : 0), 0);
+  const enSprintAvant = !Array.isArray(avant) && Array.isArray(avant.tickets) ? avant.tickets.filter(ticket => ticket && ticket.sprintId).length : 0;
+  if (sprintsAvant || enSprintAvant) {
+    controles.push([`sprints et tickets engagés conservés (${sprintsAvant} sprint(s) et ${enSprintAvant} ticket(s) avant ; ${d.sprints} et ${d.ticketsEnSprint} après)`,
+      d.sprints === sprintsAvant && d.ticketsEnSprint === enSprintAvant]);
+  }
   for (const [libelle, ok] of controles) console.log(`${ok ? '✔' : '✘'} ${libelle}`);
   console.log(`  message affiché : ${d.bandeau || '(aucun)'}\n  projets : ${(d.projets || []).join(', ')} · vue ${d.vue} · « Je suis » : ${d.utilisateur || '(vide)'}\n`);
   const tousVerts = afficher(resultat);

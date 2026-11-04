@@ -1,30 +1,142 @@
 [
- ["B1.1", "if (longueur < SPRINT_NOM_MIN || longueur > SPRINT_NOM_MAX)", "if (longueur < SPRINT_NOM_MIN || longueur >= SPRINT_NOM_MAX)"],
- ["B1.1", "else if (debutValide && donnees.fin < donnees.debut)", "else if (debutValide && donnees.fin <= donnees.debut)"],
- ["B1.1", "nombreDeJours(donnees.debut, donnees.fin) > SPRINT_JOURS_MAX", "nombreDeJours(donnees.debut, donnees.fin) >= SPRINT_JOURS_MAX"],
- ["B1.1", "donnees.capacite < 1 || donnees.capacite > SPRINT_CAPACITE_MAX", "donnees.capacite < 1 || donnees.capacite >= SPRINT_CAPACITE_MAX"],
- ["B1.1", "(Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 1;", "(Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 2;"],
- ["B1.2", "/ JOUR_EN_MS) + 1;", "/ JOUR_EN_MS);"],
- ["B1.3", "if (total > sprint.capacite) return refus(", "if (total >= sprint.capacite) return refus("],
- ["B1.3", "if (typeof ticket.points !== 'number') return refus(", "if (false) return refus("],
- ["B1.3", "if (estTermine(ticket)) return refus(`Le ticket #${idTicket} est déjà terminé`);", ""],
- ["B1.3", "if (ticket.sprintId === sprint.id) return { ok: true, tickets: tickets.slice() };", ""],
- ["B1.3", "if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé\u00a0: on ne peut plus le modifier');\n    if (ticket.sprintId", "if (false) return refus('');\n    if (ticket.sprintId"],
- ["B1.3", "const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).reduce(", "const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).filter(ticket => !estTermine(ticket)).reduce("],
- ["B1.4", "if (!sprintOuvertDe(ticket, sprints)) return refus(", "if (false) return refus("],
- ["B1.5", "if (ticketModifie.points === null) return { ok: false, erreurs: { points: 'Definition of Ready", "if (false) return { ok: false, erreurs: { points: 'Definition of Ready"],
- ["B1.5", "if (ticketModifie.points > (ticketActuel.points || 0) && engages > sprint.capacite)", "if (engages > sprint.capacite)"],
- ["B1.5", "statut: ticketActuel.statut, sprintId: ticketActuel.sprintId });", "statut: ticketActuel.statut });"],
- ["B1.6", "return { ...ticket, statut: COLONNE_BACKLOG.id, sprintId: null };", "return { ...ticket, sprintId: null };"],
- ["B1.6", "if (aujourdhui >= sprint.debut) releves[aujourdhui < sprint.fin ? aujourdhui : sprint.fin] = restant;", "releves[aujourdhui] = restant;"],
- ["B1.6", "bilan: { engage, termine: engage - restant, restant }", "bilan: { engage, termine: restant, restant }"],
- ["B1.7", "if (jour > limite) restant.push(null);", "if (jour >= limite) restant.push(null);"],
- ["B1.7", "else if (ouvert && jour === aujourdhui) restant.push(restantActuel);", ""],
- ["B1.7", "const arrondi = valeur => Math.round(valeur * 100) / 100;\n    const ideal", "const arrondi = valeur => Math.round(valeur);\n    const ideal"],
- ["B1.8", "if (!sprint || sprint.statut !== SPRINT_OUVERT || aujourdhui < sprint.debut || aujourdhui > sprint.fin) return sprint;", "if (!sprint || sprint.statut !== SPRINT_OUVERT || aujourdhui < sprint.debut) return sprint;"],
- ["B1.9", "const maximum = Math.max(1, fini(burndown.engage),", "const maximum = Math.max(fini(burndown.engage),"],
- ["B1.10", "if (erreurs.debut || erreurs.fin || erreurs.capacite) continue;", "if (erreurs.debut || erreurs.fin) continue;"],
- ["B1.10", "const garde = sprint && !(sprint.statut === SPRINT_OUVERT && ticket.points === null);", "const garde = sprint;"],
- ["B1.10", "if (typeof brut === 'object' && brut.version === 3) {", "if (false) {"],
- ["B1.11", ".map(ticket => Object.fromEntries(COLONNES_FICHIER.map(colonne => [colonne, ticket[colonne]]))), null, 2)}", ", null, 2)}"]
+ [
+  "B1.1",
+  "if (longueur < SPRINT_NOM_MIN || longueur > SPRINT_NOM_MAX)",
+  "if (longueur < SPRINT_NOM_MIN || longueur >= SPRINT_NOM_MAX)"
+ ],
+ [
+  "B1.1",
+  "else if (debutValide && donnees.fin < donnees.debut)",
+  "else if (debutValide && donnees.fin <= donnees.debut)"
+ ],
+ [
+  "B1.1",
+  "nombreDeJours(donnees.debut, donnees.fin) > SPRINT_JOURS_MAX",
+  "nombreDeJours(donnees.debut, donnees.fin) >= SPRINT_JOURS_MAX"
+ ],
+ [
+  "B1.1",
+  "donnees.capacite < 1 || donnees.capacite > SPRINT_CAPACITE_MAX",
+  "donnees.capacite < 1 || donnees.capacite >= SPRINT_CAPACITE_MAX"
+ ],
+ [
+  "B1.1",
+  "(Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 1;",
+  "(Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 2;"
+ ],
+ [
+  "B1.2",
+  "/ JOUR_EN_MS) + 1;",
+  "/ JOUR_EN_MS);"
+ ],
+ [
+  "B1.3",
+  "if (total > sprint.capacite) return refus(",
+  "if (total >= sprint.capacite) return refus("
+ ],
+ [
+  "B1.3",
+  "if (typeof ticket.points !== 'number') return refus(",
+  "if (false) return refus("
+ ],
+ [
+  "B1.3",
+  "if (estTermine(ticket)) return refus(`Le ticket #${idTicket} est déjà terminé`);",
+  ""
+ ],
+ [
+  "B1.3",
+  "if (ticket.sprintId === sprint.id) return { ok: true, tickets: tickets.slice() };",
+  ""
+ ],
+ [
+  "B1.3",
+  "if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé\\u00a0: on ne peut plus le modifier');\n    if (ticket.sprintId",
+  "if (false) return refus('');\n    if (ticket.sprintId"
+ ],
+ [
+  "B1.3",
+  "const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).reduce(",
+  "const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).filter(ticket => !estTermine(ticket)).reduce("
+ ],
+ [
+  "B1.4",
+  "if (!sprintOuvertDe(ticket, sprints)) return refus(",
+  "if (false) return refus("
+ ],
+ [
+  "B1.5",
+  "if (ticketModifie.points === null) return { ok: false, erreurs: { points: 'Definition of Ready",
+  "if (false) return { ok: false, erreurs: { points: 'Definition of Ready"
+ ],
+ [
+  "B1.5",
+  "if (ticketModifie.points > (ticketActuel.points || 0) && engages > sprint.capacite)",
+  "if (engages > sprint.capacite)"
+ ],
+ [
+  "B1.5",
+  "sprintId: ticketActuel.sprintId, bloquePar",
+  "bloquePar"
+ ],
+ [
+  "B1.6",
+  "return { ...ticket, statut: COLONNE_BACKLOG.id, sprintId: null };",
+  "return { ...ticket, sprintId: null };"
+ ],
+ [
+  "B1.6",
+  "if (aujourdhui >= sprint.debut) releves[aujourdhui < sprint.fin ? aujourdhui : sprint.fin] = restant;",
+  "releves[aujourdhui] = restant;"
+ ],
+ [
+  "B1.6",
+  "bilan: { engage, termine: engage - restant, restant }",
+  "bilan: { engage, termine: restant, restant }"
+ ],
+ [
+  "B1.7",
+  "if (jour > limite) restant.push(null);",
+  "if (jour >= limite) restant.push(null);"
+ ],
+ [
+  "B1.7",
+  "else if (ouvert && jour === aujourdhui) restant.push(restantActuel);",
+  ""
+ ],
+ [
+  "B1.7",
+  "const arrondi = valeur => Math.round(valeur * 100) / 100;\n    const ideal",
+  "const arrondi = valeur => Math.round(valeur);\n    const ideal"
+ ],
+ [
+  "B1.8",
+  "if (!sprint || sprint.statut !== SPRINT_OUVERT || aujourdhui < sprint.debut || aujourdhui > sprint.fin) return sprint;",
+  "if (!sprint || sprint.statut !== SPRINT_OUVERT || aujourdhui < sprint.debut) return sprint;"
+ ],
+ [
+  "B1.9",
+  "const maximum = Math.max(1, fini(burndown.engage),",
+  "const maximum = Math.max(fini(burndown.engage),"
+ ],
+ [
+  "B1.10",
+  "if (erreurs.debut || erreurs.fin || erreurs.capacite) continue;",
+  "if (erreurs.debut || erreurs.fin) continue;"
+ ],
+ [
+  "B1.10",
+  "const garde = sprint && !(sprint.statut === SPRINT_OUVERT && ticket.points === null);",
+  "const garde = sprint;"
+ ],
+ [
+  "B1.10",
+  "if (typeof brut === 'object' && brut.version === 3) {",
+  "if (false) {"
+ ],
+ [
+  "B1.11",
+  ".map(ticket => Object.fromEntries(COLONNES_FICHIER.map(colonne => [colonne, ticket[colonne]]))), null, 2)}",
+  ", null, 2)}"
+ ]
 ]

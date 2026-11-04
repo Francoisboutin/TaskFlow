@@ -1,0 +1,92 @@
+[
+ [
+  "B2.1",
+  "const liste = [...new Set(bloquePar)];",
+  "const liste = [...bloquePar];"
+ ],
+ [
+  "B2.1",
+  "return { ok: true, tickets: tickets.map(element => (element.id === id ? { ...element, bloquePar: liste } : element)) };",
+  "return { ok: true, tickets: tickets.map(element => ({ ...element, bloquePar: element.id === id ? liste : element.bloquePar })) };"
+ ],
+ [
+  "B2.1",
+  "statut: ticketActuel.statut, sprintId: ticketActuel.sprintId, bloquePar: ticketActuel.bloquePar });",
+  "statut: ticketActuel.statut, sprintId: ticketActuel.sprintId });"
+ ],
+ [
+  "B2.2",
+  "if (inconnu !== undefined) return refus(`Ticket bloquant introuvable (id ${inconnu})`);",
+  ""
+ ],
+ [
+  "B2.2",
+  "bloquePar.some(numero => !Number.isInteger(numero) || numero < 1)) return refus('Liste de bloquants invalide');",
+  "bloquePar.some(numero => numero < 1)) return refus('Liste de bloquants invalide');"
+ ],
+ [
+  "B2.3",
+  "const chemin = numero === id ? [id] : cheminDAttente(aretes, numero, id);",
+  "const chemin = numero === id ? null : cheminDAttente(aretes, numero, id);"
+ ],
+ [
+  "B2.3",
+  "const chemin = numero === id ? [id] : cheminDAttente(aretes, numero, id);",
+  "const chemin = numero === id ? [id] : null;"
+ ],
+ [
+  "B2.3",
+  "for (const suivant of aretes(courant)) if (!precedent.has(suivant)) { precedent.set(suivant, courant); file.push(suivant); }",
+  "for (const suivant of aretes(courant).slice(0, 1)) if (!precedent.has(suivant)) { precedent.set(suivant, courant); file.push(suivant); }"
+ ],
+ [
+  "B2.3",
+  "for (let etape = courant; etape !== null; etape = precedent.get(etape)) chemin.unshift(etape);",
+  "for (let etape = courant; etape !== null; etape = precedent.get(etape)) chemin.push(etape);"
+ ],
+ [
+  "B2.4",
+  "if (RANG_DEBUT_TRAVAIL >= 0 && COLONNES.indexOf(colonneCible) >= RANG_DEBUT_TRAVAIL) {",
+  "if (RANG_DEBUT_TRAVAIL >= 0 && COLONNES.indexOf(colonneCible) === RANG_DEBUT_TRAVAIL) {"
+ ],
+ [
+  "B2.4",
+  "if (RANG_DEBUT_TRAVAIL >= 0 && COLONNES.indexOf(colonneCible) >= RANG_DEBUT_TRAVAIL) {",
+  "if (RANG_DEBUT_TRAVAIL >= 0 && COLONNES.indexOf(colonneCible) >= RANG_DEBUT_TRAVAIL - 1) {"
+ ],
+ [
+  "B2.5",
+  "return !!bloquant && !estTermine(bloquant);",
+  "return !!bloquant;"
+ ],
+ [
+  "B2.5",
+  "return !!bloquant && !estTermine(bloquant);",
+  "return !estTermine(bloquant || {});"
+ ],
+ [
+  "B2.6",
+  "const retirerDesBloquants = (tickets, id) => tickets.map(ticket => (Array.isArray(ticket.bloquePar) && ticket.bloquePar.includes(id)",
+  "const retirerDesBloquants = (tickets, id) => tickets.map(ticket => (Array.isArray(ticket.bloquePar) && ticket.bloquePar[0] === id"
+ ],
+ [
+  "B2.7",
+  "if (cheminDAttente(aretes, numero, ticket.id)) continue;",
+  ""
+ ],
+ [
+  "B2.7",
+  "if (!Number.isInteger(numero) || numero === ticket.id || !numeros.has(numero) || liste.includes(numero)) continue;",
+  "if (!Number.isInteger(numero) || numero === ticket.id || liste.includes(numero)) continue;"
+ ],
+ [
+  "B2.7",
+  "bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [] };",
+  "bloquePar: [] };"
+ ],
+ [
+  "B2.7",
+  "if (typeof brut === 'object' && brut.version === 4) {",
+  "if (false) {"
+ ]
+]

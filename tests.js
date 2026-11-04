@@ -760,12 +760,16 @@
       const c = essayer(() => definirBloquants(chaine, 4, [4]));
       const d = essayer(() => definirBloquants(gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2, 3]), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1)]), 2, [3]));
       const e = essayer(() => definirBloquants(chaine, 3, [4, 1]));
+      // Cycle par le 2e bloquant d’un ticket (#1 attend #2 ET #3) : tous les chemins sont suivis, pas seulement le premier
+      const branches = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [2, 3]), ticketDeTest(2, COLONNES[1].id, 2), ticketDeTest(3, COLONNES[1].id, 1, null, [4]), ticketDeTest(4, COLONNES[1].id, 1)]);
+      const f = essayer(() => definirBloquants(branches, 4, [1]));
       return bilanDesEtapes([
         ['B2.3a : #3 bloqué par #1 → « Cycle refusé : #3 → #1 → #2 → #3 », rien ne change', a.ok === false && a.erreur === `Cycle refusé${NBSP}: #3 → #1 → #2 → #3` && JSON.stringify(chaine) === copieAvant],
         ['B2.3b : cycle à deux → « Cycle refusé : #2 → #1 → #2 »', b.ok === false && b.erreur === `Cycle refusé${NBSP}: #2 → #1 → #2`],
         ['B2.3c : #4 bloqué par lui-même → « Cycle refusé : #4 → #4 »', c.ok === false && c.erreur === `Cycle refusé${NBSP}: #4 → #4`],
         ['B2.3d : losange (#1 → #2, #1 → #3, puis #2 → #3) accepté', d.ok === true && JSON.stringify(ticketParId(d.tickets, 2).bloquePar) === '[3]'],
-        ['B2.3e : [4, 1] → le cycle par #1 est signalé', e.ok === false && e.erreur === `Cycle refusé${NBSP}: #3 → #1 → #2 → #3`]
+        ['B2.3e : [4, 1] → le cycle par #1 est signalé', e.ok === false && e.erreur === `Cycle refusé${NBSP}: #3 → #1 → #2 → #3`],
+        ['B2.3a : cycle passant par le 2e bloquant (#1 → [2, 3], #3 → #4, puis #4 → #1) → « Cycle refusé : #4 → #1 → #3 → #4 »', f.ok === false && f.erreur === `Cycle refusé${NBSP}: #4 → #1 → #3 → #4`]
       ], () => JSON.stringify({ a, b, c, d: d.ok || d.erreur, e }), `« ${a.erreur} » ; « ${b.erreur} » ; « ${c.erreur} » ; losange accepté`);
     } },
 
@@ -811,11 +815,13 @@
     { code: 'T34', groupe: 'b2', nom: 'B2.6 · supprimer un ticket nettoie toutes les références', executer() {
       const manquantes = absentes({ retirerDesBloquants });
       if (manquantes.length) return testAbsent(manquantes);
-      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [3, 2]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(4, COLONNES[1].id, 1)]);   // #3 vient d’être supprimé
+      // #3 vient d’être supprimé ; #5 le cite en 2e position (la référence n’est pas toujours la première)
+      const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, null, [3, 2]), ticketDeTest(2, COLONNES[1].id, 2, null, [3]), ticketDeTest(4, COLONNES[1].id, 1), ticketDeTest(5, COLONNES[1].id, 1, null, [2, 3, 4])]);
       const copieAvant = JSON.stringify(depart);
       const nettoye = essayer(() => retirerDesBloquants(depart, 3));
       return bilanDesEtapes([
-        ['B2.6a : #1 → [2], #2 → []', Array.isArray(nettoye) && JSON.stringify(ticketParId(nettoye, 1).bloquePar) === '[2]' && JSON.stringify(ticketParId(nettoye, 2).bloquePar) === '[]'],
+        ['B2.6a : #1 → [2], #2 → [], #5 [2, 3, 4] → [2, 4]', Array.isArray(nettoye) && JSON.stringify(ticketParId(nettoye, 1).bloquePar) === '[2]' && JSON.stringify(ticketParId(nettoye, 2).bloquePar) === '[]'
+          && JSON.stringify(ticketParId(nettoye, 5).bloquePar) === '[2,4]'],
         ['B2.6a : nouveau tableau, tableau reçu intact, ticket non concerné (#4) = même objet', Array.isArray(nettoye) && nettoye !== depart && JSON.stringify(depart) === copieAvant && ticketParId(nettoye, 4) === ticketParId(depart, 4)]
       ], () => JSON.stringify(nettoye), 'Plus aucune référence à #3 ; les autres tickets sont intacts');
     } },
