@@ -1,0 +1,14 @@
+[
+ ["B6.1", "const aDemarrer = sprintsEnCours(sprints, aujourdhui).filter(sprint => !sprint.demarreLe);", "const aDemarrer = sprintsEnCours(sprints, aujourdhui);"],
+ ["B6.1", "return { tickets: nouveaux, sprints: listeDeSprints(sprints).map(sprint => (numeros.has(sprint.id) ? { ...sprint, demarreLe: aujourdhui } : sprint)), demarres };", "return { tickets: nouveaux, sprints, demarres };"],
+ ["B6.1", "if (essai.ok) { nouveaux = essai.tickets; passes.push(ticket.id); }", "if (essai.ok) { nouveaux = essai.tickets; }"],
+ ["B6.2", "if (!ticket || ticket.sprintId !== sprint.id || ticket.statut !== COLONNE_BACKLOG.id) continue;", "if (!ticket || ticket.sprintId !== sprint.id) continue;"],
+ ["B6.2", "if (!ticket || ticket.sprintId !== sprint.id || ticket.statut !== COLONNE_BACKLOG.id) continue;", "if (!ticket || ticket.statut !== COLONNE_BACKLOG.id) continue;"],
+ ["B6.3", "if (!aDemarrer.length) return { tickets, sprints, demarres: [] };", ""],
+ ["B6.5", "if (!sprint || !sprint.demarreLe || ticket.statut !== COLONNE_BACKLOG.id) return liste;", "if (!sprint || ticket.statut !== COLONNE_BACKLOG.id) return liste;"],
+ ["B6.5", "if (!sprint || !sprint.demarreLe || ticket.statut !== COLONNE_BACKLOG.id) return liste;", "if (!sprint || !sprint.demarreLe) return liste;"],
+ ["B6.6", "statut: SPRINT_OUVERT, releves: {}, bilan: null, clotureLe: null, demarreLe: null };", "statut: SPRINT_OUVERT, releves: {}, bilan: null, clotureLe: null };"],
+ ["B6.7", "demarreLe: dateIsoValide(element.demarreLe) ? element.demarreLe : null });", "demarreLe: element.demarreLe ?? null });"],
+ ["B6.7", "demarreLe: dateIsoValide(element.demarreLe) ? element.demarreLe : null });", "demarreLe: null });"],
+ ["B6.7", "if (typeof brut === 'object' && brut.version === 6) {", "if (false) {"]
+]

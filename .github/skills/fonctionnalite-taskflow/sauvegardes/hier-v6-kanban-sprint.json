@@ -1,0 +1,247 @@
+{
+ "version": 6,
+ "tickets": [
+  {
+   "id": 1,
+   "titre": "Connexion SSO via le compte entreprise",
+   "type": "story",
+   "priorite": 1,
+   "points": 5,
+   "statut": "encours",
+   "creeLe": "2026-10-12",
+   "assigne": "Camille",
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 2,
+   "titre": "Erreur 500 au login après expiration de la session",
+   "type": "bug",
+   "priorite": 1,
+   "points": 3,
+   "statut": "afaire",
+   "creeLe": "2026-10-13",
+   "assigne": "Yanis",
+   "sprintId": null,
+   "bloquePar": [
+    4
+   ],
+   "echeance": "2026-11-01"
+  },
+  {
+   "id": 3,
+   "titre": "Refonte de la page de login",
+   "type": "story",
+   "priorite": 2,
+   "points": 3,
+   "statut": "afaire",
+   "creeLe": "2026-10-14",
+   "assigne": null,
+   "sprintId": 1,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 4,
+   "titre": "Tableau de bord : synthèse des contrats en cours",
+   "type": "story",
+   "priorite": 1,
+   "points": 8,
+   "statut": "backlog",
+   "creeLe": "2026-10-15",
+   "assigne": null,
+   "sprintId": 1,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 5,
+   "titre": "Téléchargement des factures au format PDF",
+   "type": "story",
+   "priorite": 2,
+   "points": 5,
+   "statut": "backlog",
+   "creeLe": "2026-10-16",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 6,
+   "titre": "Mot de passe oublié : l’e-mail de réinitialisation n’arrive pas",
+   "type": "bug",
+   "priorite": 2,
+   "points": 2,
+   "statut": "afaire",
+   "creeLe": "2026-10-19",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 7,
+   "titre": "Modification des coordonnées personnelles",
+   "type": "story",
+   "priorite": 2,
+   "points": null,
+   "statut": "backlog",
+   "creeLe": "2026-10-20",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 8,
+   "titre": "Messagerie sécurisée avec le conseiller",
+   "type": "story",
+   "priorite": 3,
+   "points": 13,
+   "statut": "backlog",
+   "creeLe": "2026-10-21",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 9,
+   "titre": "Migration des comptes clients existants",
+   "type": "tache",
+   "priorite": 1,
+   "points": null,
+   "statut": "backlog",
+   "creeLe": "2026-10-22",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 10,
+   "titre": "Audit d’accessibilité des nouveaux écrans",
+   "type": "tache",
+   "priorite": 2,
+   "points": 8,
+   "statut": "backlog",
+   "creeLe": "2026-10-26",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 11,
+   "titre": "Mise en place du suivi d’audience",
+   "type": "tache",
+   "priorite": 3,
+   "points": 1,
+   "statut": "termine",
+   "creeLe": "2026-10-27",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  },
+  {
+   "id": 12,
+   "titre": "Menu mobile qui ne se referme plus",
+   "type": "bug",
+   "priorite": 3,
+   "points": 2,
+   "statut": "encours",
+   "creeLe": "2026-10-29",
+   "assigne": null,
+   "sprintId": null,
+   "bloquePar": [],
+   "echeance": null
+  }
+ ],
+ "projets": [
+  {
+   "id": 1,
+   "nom": "Refonte de l’espace client",
+   "tickets": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "ordreManuel": null,
+   "notesImport": {},
+   "journal": [],
+   "sprints": [
+    {
+     "id": 1,
+     "nom": "Sprint 17",
+     "debut": "2026-11-04",
+     "fin": "2026-11-17",
+     "capacite": 20,
+     "statut": "ouvert",
+     "releves": {
+      "2026-11-04": 11
+     },
+     "bilan": null,
+     "clotureLe": null
+    }
+   ]
+  }
+ ],
+ "projetActif": 1,
+ "compteurs": {
+  "prochainTicket": 13,
+  "prochainProjet": 2,
+  "numerosAttribues": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12
+  ]
+ },
+ "affichage": {
+  "vue": "kanban",
+  "utilisateur": "Camille",
+  "tri": [
+   {
+    "critere": "priorite",
+    "sens": "asc"
+   },
+   {
+    "critere": "points",
+    "sens": "asc"
+   }
+  ],
+  "filtres": {
+   "texte": "",
+   "numero": "",
+   "du": "",
+   "au": "",
+   "mesTickets": false,
+   "types": [],
+   "priorites": [],
+   "points": [],
+   "statuts": [],
+   "urgences": []
+  }
+ },
+ "enregistreLe": "2026-11-04T14:46:55.096Z"
+}
