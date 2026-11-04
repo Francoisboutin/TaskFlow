@@ -26,6 +26,8 @@
     urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
     // B5 · Kanban du sprint en cours (docs/spec.md)
     sprintsEnCours, ticketsDuKanban,
+    // B6 · Démarrage d’un sprint (docs/spec.md)
+    demarrerSprints, aFaireSiSprintDemarre,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
@@ -45,6 +47,7 @@
      T13 à T15 : audit des cas limites. T16 à T28 : B1 sprints et burndown.
      T29 à T36 : B2 dépendances et blocages. T37 à T44 : B3 échéances et calendrier.
      T45 à T47 : B4 disposition de l’écran (structure de la page). T48 à T53 : B5 Kanban du sprint en cours.
+     T54 à T59 : B6 démarrage d’un sprint.
      ======================================================================== */
   function gelerEnProfondeur(objet) {
     for (const valeur of Object.values(objet)) if (valeur && typeof valeur === 'object') gelerEnProfondeur(valeur);
@@ -86,7 +89,8 @@
   const absentes = fonctions => Object.entries(fonctions).filter(([, fonction]) => typeof fonction !== 'function').map(([nom]) => `${nom}()`);
   const testAbsent = manquantes => ({ reussi: false, detail: `Pas encore codé : ${manquantes.join(', ')} absente${manquantes.length > 1 ? 's' : ''} de window.TaskFlow` });
   const sprintDeTest = (id, capacite, options = {}) => ({ id, nom: options.nom || `Sprint ${id}`, debut: options.debut || '2026-11-02', fin: options.fin || '2026-11-13',
-    capacite, statut: options.statut || 'ouvert', releves: options.releves || {}, bilan: options.bilan || null, clotureLe: options.clotureLe || null });
+    capacite, statut: options.statut || 'ouvert', releves: options.releves || {}, bilan: options.bilan || null, clotureLe: options.clotureLe || null,
+    demarreLe: options.demarreLe || null });   // B6 : date du démarrage, null tant que le sprint n’a pas démarré
   // JSON aux clés triées, à toutes les profondeurs : compare des objets sans dépendre de l’ordre des clés
   const jsonTrie = valeur => JSON.stringify(valeur, (cle, element) => (element && typeof element === 'object' && !Array.isArray(element)
     ? Object.keys(element).sort().reduce((trie, nom) => { trie[nom] = element[nom]; return trie; }, {}) : element));
@@ -421,7 +425,7 @@
       const vide = gelerEnProfondeur([]);
       const donnees = { nom: 'Sprint 1', debut: '2026-11-02', fin: '2026-11-13', capacite: 20 };
       const cree = creerSprint(vide, donnees);
-      const attendu = { id: 1, nom: 'Sprint 1', debut: '2026-11-02', fin: '2026-11-13', capacite: 20, statut: 'ouvert', releves: {}, bilan: null, clotureLe: null };
+      const attendu = { id: 1, nom: 'Sprint 1', debut: '2026-11-02', fin: '2026-11-13', capacite: 20, statut: 'ouvert', releves: {}, bilan: null, clotureLe: null, demarreLe: null };   // B6.6
       const suivant = creerSprint(gelerEnProfondeur([sprintDeTest(1, 10), sprintDeTest(4, 10)]), donnees);
       const avec = changements => creerSprint(vide, { ...donnees, ...changements });
       const erreur = (changements, champ) => { const resultat = avec(changements); return resultat.ok === false && resultat.erreurs ? resultat.erreurs[champ] : 'accepté'; };
@@ -1152,11 +1156,121 @@
         ['B5.5a : la veille (15 nov.) → les 3 tickets', Array.isArray(veille.tickets) && veille.tickets.length === 3 && veille.horsSprint === 0],
         ['B5.5b : le jour du début (16 nov.) → seulement #1', Array.isArray(jourJ.tickets) && JSON.stringify(jourJ.tickets.map(ticket => ticket.id)) === '[1]' && jourJ.horsSprint === 2]
       ], () => JSON.stringify({ veille: veille.tickets && veille.tickets.map(t => t.id), jourJ: jourJ.tickets && jourJ.tickets.map(t => t.id), exception: veille.exception || jourJ.exception }), 'Veille : tout ; jour J : le sprint seulement');
+    } },
+
+    /* ---------- B6 · Démarrage d’un sprint : ses tickets « Backlog » passent « À faire » (docs/spec.md) ---------- */
+
+    { code: 'T54', groupe: 'b6', nom: 'B6.1 · au démarrage, les tickets « Backlog » du sprint passent « À faire » ; demarreLe noté', executer() {
+      const manquantes = absentes({ demarrerSprints });
+      if (manquantes.length) return testAbsent(manquantes);
+      const AFAIRE = COLONNES[1].id;
+      const a = essayer(() => demarrerSprints(gelerEnProfondeur([ticketDeTest(3, COLONNE_BACKLOG.id, 3, 1), ticketDeTest(4, COLONNE_BACKLOG.id, 5, 1)]),
+        gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-04', fin: '2026-11-17' })]), '2026-11-04'));
+      const b = essayer(() => demarrerSprints(gelerEnProfondeur([ticketDeTest(3, COLONNE_BACKLOG.id, 3, 1)]), gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13' })]), '2026-11-04'));
+      return bilanDesEtapes([
+        ['B6.1a : #3 et #4 passent « À faire »', Array.isArray(a.tickets) && [3, 4].every(id => ticketParId(a.tickets, id).statut === AFAIRE)],
+        ['B6.1a : le sprint a demarreLe = 2026-11-04', Array.isArray(a.sprints) && a.sprints[0].demarreLe === '2026-11-04'],
+        ['B6.1a : demarres = [{ sprintId: 1, tickets: [3, 4] }]', jsonTrie(a.demarres) === jsonTrie([{ sprintId: 1, tickets: [3, 4] }])],
+        ['B6.1b : sprint commencé le 2, pas encore démarré → démarre aujourd’hui', Array.isArray(b.tickets) && ticketParId(b.tickets, 3).statut === AFAIRE && b.sprints[0].demarreLe === '2026-11-04']
+      ], () => JSON.stringify({ a: a.tickets ? { tickets: a.tickets.map(t => [t.id, t.statut]), demarreLe: a.sprints[0].demarreLe, demarres: a.demarres } : a, b: b.sprints ? b.sprints[0].demarreLe : b }),
+      'Démarrage : #3 et #4 « À faire », demarreLe noté');
+    } },
+
+    { code: 'T55', groupe: 'b6', nom: 'B6.2 · seuls les tickets « Backlog » du sprint changent ; tableaux reçus intacts', executer() {
+      const manquantes = absentes({ demarrerSprints });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNE_BACKLOG.id, 2), ticketDeTest(3, COLONNE_BACKLOG.id, 3, 1), ticketDeTest(5, COLONNES[2].id, 3, 1), ticketDeTest(6, DERNIERE.id, 1, 1)]);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-04', fin: '2026-11-17' })]);
+      const copie = JSON.stringify({ tickets, sprints });
+      const r = essayer(() => demarrerSprints(tickets, sprints, '2026-11-04'));
+      return bilanDesEtapes([
+        ['B6.2a : #5 « En cours » et #6 « Terminé » (dans le sprint) inchangés, mêmes objets', Array.isArray(r.tickets) && ticketParId(r.tickets, 5) === tickets[2] && ticketParId(r.tickets, 6) === tickets[3]],
+        ['B6.2b : #1 « Backlog » hors sprint inchangé, même objet', Array.isArray(r.tickets) && ticketParId(r.tickets, 1) === tickets[0]],
+        ['seul #3 change : « À faire »', Array.isArray(r.tickets) && ticketParId(r.tickets, 3).statut === COLONNES[1].id && JSON.stringify(r.demarres[0].tickets) === '[3]'],
+        ['B6.2c : tableaux reçus intacts', JSON.stringify({ tickets, sprints }) === copie]
+      ], () => JSON.stringify(r.tickets ? r.tickets.map(t => [t.id, t.statut]) : r), 'Seul le ticket « Backlog » du sprint passe « À faire »');
+    } },
+
+    { code: 'T56', groupe: 'b6', nom: 'B6.3 · le démarrage n’a lieu qu’une fois (un ticket remis au Backlog y reste)', executer() {
+      const manquantes = absentes({ demarrerSprints });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(3, COLONNE_BACKLOG.id, 3, 1)]);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13', demarreLe: '2026-11-02' })]);
+      const r = essayer(() => demarrerSprints(tickets, sprints, '2026-11-04'));
+      return bilanDesEtapes([
+        ['B6.3a : sprint déjà démarré → #3 reste « Backlog », demarres = []', Array.isArray(r.tickets) && ticketParId(r.tickets, 3).statut === COLONNE_BACKLOG.id && Array.isArray(r.demarres) && r.demarres.length === 0],
+        ['B6.3b : rien à démarrer → mêmes tableaux renvoyés', r.tickets === tickets && r.sprints === sprints]
+      ], () => JSON.stringify({ tickets: r.tickets && r.tickets.map(t => [t.id, t.statut]), demarres: r.demarres, memes: r.tickets === tickets }), 'Déjà démarré : rien ne change');
+    } },
+
+    { code: 'T57', groupe: 'b6', nom: 'B6.4 · pas avant la date de début (date injectée), jamais après la clôture', executer() {
+      const manquantes = absentes({ demarrerSprints });
+      if (manquantes.length) return testAbsent(manquantes);
+      const tickets = gelerEnProfondeur([ticketDeTest(3, COLONNE_BACKLOG.id, 3, 1), ticketDeTest(4, COLONNE_BACKLOG.id, 2, 2)]);
+      const sprints = gelerEnProfondeur([sprintDeTest(1, 20, { debut: '2026-11-05', fin: '2026-11-18' }),
+        sprintDeTest(2, 20, { debut: '2026-10-19', fin: '2026-10-30', statut: 'cloture', bilan: { engage: 2, termine: 0, restant: 2 }, clotureLe: '2026-10-30' })]);
+      const veille = essayer(() => demarrerSprints(tickets, sprints, '2026-11-04'));
+      const jourJ = essayer(() => demarrerSprints(tickets, sprints, '2026-11-05'));
+      return bilanDesEtapes([
+        ['B6.4a : la veille → rien', Array.isArray(veille.demarres) && veille.demarres.length === 0 && ticketParId(veille.tickets, 3).statut === COLONNE_BACKLOG.id],
+        ['B6.4a : le jour du début → #3 « À faire »', Array.isArray(jourJ.tickets) && ticketParId(jourJ.tickets, 3).statut === COLONNES[1].id],
+        ['B6.4b : sprint clôturé → #4 reste « Backlog »', Array.isArray(jourJ.tickets) && ticketParId(jourJ.tickets, 4).statut === COLONNE_BACKLOG.id && !jourJ.demarres.some(d => d.sprintId === 2)]
+      ], () => JSON.stringify({ veille: veille.demarres, jourJ: jourJ.demarres }), 'Veille : rien ; jour J : démarré ; clôturé : jamais');
+    } },
+
+    { code: 'T58', groupe: 'b6', nom: 'B6.5 · ticket mis dans un sprint déjà démarré : « Backlog » → « À faire »', executer() {
+      const manquantes = absentes({ aFaireSiSprintDemarre });
+      if (manquantes.length) return testAbsent(manquantes);
+      const demarre = sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-13', demarreLe: '2026-11-02' });
+      const avenir = sprintDeTest(2, 20, { debut: '2026-11-10', fin: '2026-11-20' });
+      const sprints = gelerEnProfondeur([demarre, avenir]);
+      const tickets = gelerEnProfondeur([ticketDeTest(7, COLONNE_BACKLOG.id, 3, 1), ticketDeTest(8, COLONNES[2].id, 2, 1), ticketDeTest(9, COLONNE_BACKLOG.id, 1, 2), ticketDeTest(10, COLONNE_BACKLOG.id, 1)]);
+      const statut = (resultat, id) => (Array.isArray(resultat) ? ticketParId(resultat, id).statut : resultat);
+      const a = essayer(() => aFaireSiSprintDemarre(tickets, sprints, 7));
+      const b = essayer(() => aFaireSiSprintDemarre(tickets, sprints, 8));
+      const c = essayer(() => aFaireSiSprintDemarre(tickets, sprints, 9));
+      const horsSprint = essayer(() => aFaireSiSprintDemarre(tickets, sprints, 10));
+      const inconnu = essayer(() => aFaireSiSprintDemarre(tickets, sprints, 99));
+      return bilanDesEtapes([
+        ['B6.5a : sprint démarré, #7 « Backlog » → « À faire »', statut(a, 7) === COLONNES[1].id],
+        ['B6.5b : sprint démarré, #8 « En cours » inchangé', statut(b, 8) === COLONNES[2].id],
+        ['B6.5c : sprint pas démarré, #9 reste « Backlog »', statut(c, 9) === COLONNE_BACKLOG.id],
+        ['B6.5d : ticket hors sprint ou inconnu → rien ne change, sans exception', statut(horsSprint, 10) === COLONNE_BACKLOG.id && Array.isArray(inconnu) && inconnu.length === tickets.length]
+      ], () => JSON.stringify({ a: statut(a, 7), b: statut(b, 8), c: statut(c, 9), horsSprint: statut(horsSprint, 10), inconnu: Array.isArray(inconnu) ? 'ok' : inconnu }), 'Ajout dans un sprint démarré : Backlog → À faire');
+    } },
+
+    { code: 'T59', groupe: 'b6', nom: 'B6.6 et B6.7 · nouveau sprint pas démarré ; sauvegarde v7, migration v6 → v7, demarreLe abîmé', executer() {
+      const cree = essayer(() => creerSprint([], { nom: 'Sprint 1', debut: '2026-11-02', fin: '2026-11-13', capacite: 20 }));
+      const sprintDemarre = sprintDeTest(1, 20, { demarreLe: '2026-11-02' });
+      const projet = { id: 1, nom: 'Projet', tickets: gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 1)]), ordreManuel: null, notesImport: {}, journal: [], sprints: gelerEnProfondeur([sprintDemarre]) };
+      const etatTest = { projets: [projet], projetActifId: 1, prochainIdTicket: 2, prochainIdProjet: 2, numerosAttribues: new Set([1]), vue: 'sprints', tri: triParDefaut(), filtres: filtresVides(), utilisateur: '' };
+      const relu = charger(JSON.stringify(enveloppeDeSauvegarde(etatTest)));
+      // Sauvegarde d’hier en v6 : un sprint (sans demarreLe), un ticket engagé, un blocage, une échéance
+      const sprintV6 = { id: 1, nom: 'Sprint d’hier', debut: '2026-11-02', fin: '2026-11-13', capacite: 20, statut: 'ouvert', releves: {}, bilan: null, clotureLe: null };
+      const v6 = charger(JSON.stringify({ version: 6, tickets: [ticketDeTest(1, COLONNE_BACKLOG.id, 3, 1, [2], '2026-11-20'), ticketDeTest(2, COLONNES[1].id, 2)],
+        projets: [{ id: 1, nom: 'Hier', tickets: [1, 2], ordreManuel: null, notesImport: {}, journal: [], sprints: [sprintV6] }], projetActif: 1,
+        compteurs: { prochainTicket: 3, prochainProjet: 2, numerosAttribues: [1, 2] }, affichage: { vue: 'kanban', utilisateur: 'Camille', tri: triParDefaut(), filtres: {} } }));
+      const projetV6 = v6.donnees && v6.donnees.projets[0];
+      const abime = charger(JSON.stringify({ version: VERSION_SAUVEGARDE, tickets: [ticketDeTest(1, COLONNES[1].id, 3, 1)],
+        projets: [{ id: 1, nom: 'Abîmé', tickets: [1], ordreManuel: null, notesImport: {}, journal: [], sprints: [sprintDeTest(1, 20, { demarreLe: '2026-02-30' }), { ...sprintDeTest(2, 20), demarreLe: 12 }] }], projetActif: 1,
+        compteurs: { prochainTicket: 2, prochainProjet: 2, numerosAttribues: [1] }, affichage: { vue: 'backlog', utilisateur: '', tri: triParDefaut(), filtres: {} } }));
+      const sprintsAbimes = abime.donnees ? abime.donnees.projets[0].sprints : [];
+      return bilanDesEtapes([
+        ['B6.6 : creerSprint → demarreLe null', !!cree.sprint && cree.sprint.demarreLe === null],
+        ['VERSION_SAUVEGARDE vaut au moins 7', VERSION_SAUVEGARDE >= 7],
+        ['B6.7a : aller-retour → demarreLe identique', relu.origine === 'sauvegarde' && !!relu.donnees && relu.donnees.projets[0].sprints[0].demarreLe === '2026-11-02'],
+        ['B6.7b : sauvegarde v6 → « migration-v6 », demarreLe null', v6.origine === 'migration-v6' && !!projetV6 && projetV6.sprints.length === 1 && projetV6.sprints[0].demarreLe === null],
+        ['B6.7b : sprintId, bloquePar et echeance conservés', !!projetV6 && ticketParId(projetV6.tickets, 1).sprintId === 1 && JSON.stringify(ticketParId(projetV6.tickets, 1).bloquePar) === '[2]'
+          && ticketParId(projetV6.tickets, 1).echeance === '2026-11-20'],
+        ['B6.7c : demarreLe « 2026-02-30 » ou 12 → null', sprintsAbimes.length === 2 && sprintsAbimes.every(sprint => sprint.demarreLe === null)],
+        [`B6.7d : version ${VERSION_SAUVEGARDE + 1} → « version-inconnue »`, charger(`{"version":${VERSION_SAUVEGARDE + 1},"tickets":[],"projets":[]}`).origine === 'version-inconnue']
+      ], () => JSON.stringify({ cree: cree.sprint || cree, relu: relu.origine, v6: v6.origine, demarreLeV6: projetV6 && projetV6.sprints[0] && projetV6.sprints[0].demarreLe, abimes: sprintsAbimes.map(s => s.demarreLe) }),
+      'Nouveau sprint non démarré ; v7 : aller-retour, migration v6 → v7 sans perte, demarreLe abîmé → null');
     } }
   ];
 
   // Titres des groupes de tests dans le panneau
-  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)' };
+  const GROUPES_DE_TESTS = { regles: 'Règles métier du Kanban', piege: 'Fichier piégé backlog-import.csv, importé dans le tableau de départ', sauvegarde: 'Sauvegarde et chargement', po: 'Demandes du Product Owner (phase 2)', audit: 'Audit des cas limites (deplacerTicket, importerTickets)', b1: 'B1 · Sprints et burndown (docs/spec.md)', b2: 'B2 · Dépendances et blocages (docs/spec.md)', b3: 'B3 · Échéances et calendrier (docs/spec.md)', b4: 'B4 · Disposition de l’écran (docs/spec.md)', b5: 'B5 · Le Kanban affiche le sprint en cours (docs/spec.md)', b6: 'B6 · Démarrage d’un sprint (docs/spec.md)' };
 
   // Exécute un test ; un test qui plante est un test échoué
   function executerUnTest(test) {
