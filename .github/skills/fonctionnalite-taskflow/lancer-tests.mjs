@@ -8,6 +8,10 @@
          → test de mutation : applique le remplacement sur une COPIE de app.js (le vrai fichier
            n'est jamais modifié), relance les tests et dit si le mutant est tué.
            Code de sortie 0 = mutant tué, 1 = mutant survivant, 2 = mutation impossible.
+     node .github/skills/fonctionnalite-taskflow/lancer-tests.mjs --sauvegarde fichier.json
+         → recharge une sauvegarde (le contenu de localStorage « taskflow ») par le VRAI démarrage
+           de l'application, sur une copie : aucune erreur JS, sauvegarde ni rejetée ni vidée,
+           réécrite dans la version actuelle, tous les tests verts. Code 0 = rechargée sans erreur.
 
    Le navigateur est cherché aux emplacements habituels ; CHROME_PATH permet d'en imposer un. */
 import { spawnSync } from 'node:child_process';
@@ -56,7 +60,7 @@ function executer(dossier) {
   }));
   const bilan = decoder((dom.match(/id="at-bilan"[^>]*>([^<]*)</) || [, ''])[1]);
   const erreursJs = (sortie.stderr || '').split('\n').filter(ligne => /CONSOLE/.test(ligne) && /Uncaught|Error/i.test(ligne));
-  return { tests, bilan, erreursJs };
+  return { tests, bilan, erreursJs, dom };
 }
 
 function afficher({ tests, bilan, erreursJs }) {
@@ -89,6 +93,62 @@ if (args[0] === '--muter') {
   const tousVerts = afficher(resultat);
   console.log(tousVerts ? '\n⚠ MUTANT SURVIVANT : aucun test ne détecte cette erreur.' : '\n✔ MUTANT TUÉ : au moins un test détecte cette erreur.');
   process.exit(tousVerts ? 1 : 0);
+}
+
+if (args[0] === '--sauvegarde') {
+  const fichier = args[1];
+  if (!fichier || !existsSync(fichier)) { console.error('Usage : --sauvegarde chemin/vers/sauvegarde.json'); process.exit(2); }
+  const texte = readFileSync(fichier, 'utf8').replace(/^\ufeff/, '');
+  let avant;
+  try { avant = JSON.parse(texte); } catch (erreur) { console.error(`Fichier illisible : ${erreur.message}`); process.exit(2); }
+  const ticketsAvant = Array.isArray(avant) ? avant.length : (Array.isArray(avant && avant.tickets) ? avant.tickets.length : 0);
+  const copie = mkdtempSync(join(tmpdir(), 'taskflow-sauvegarde-'));
+  for (const nom of FICHIERS) copyFileSync(join(RACINE, nom), join(copie, nom));
+  // Avant l'application : la sauvegarde est placée dans localStorage, comme dans le navigateur de la veille
+  // (« < » devient \u003c dans la chaîne : un « </script> » contenu dans la sauvegarde ne peut pas fermer la balise)
+  const injection = `<script>localStorage.clear();localStorage.setItem('taskflow', ${JSON.stringify(texte).replace(/</g, '\\u003c')});window.__sauvegardeInjectee = true;</script>`;
+  // Après l'application et les tests : ce qu'elle a fait de la sauvegarde
+  const diagnostic = `<script>(function () {
+    var d = { injectee: window.__sauvegardeInjectee === true, illisible: localStorage.getItem('taskflow-illisible') !== null, versionApp: window.TaskFlow && window.TaskFlow.VERSION_SAUVEGARDE };
+    try { var s = JSON.parse(localStorage.getItem('taskflow')); d.version = s.version; d.tickets = s.tickets.length;
+      d.projets = s.projets.map(function (p) { return p.nom + ' (' + p.tickets.length + ' tickets)'; });
+      d.vue = s.affichage && s.affichage.vue; d.utilisateur = s.affichage && s.affichage.utilisateur; }
+    catch (e) { d.erreur = String(e); }
+    var b = document.getElementById('bandeau-chargement');
+    d.bandeau = b && !b.hidden ? (document.getElementById('bandeau-chargement-titre').textContent + ' ' + document.getElementById('bandeau-chargement-texte').textContent) : '';
+    var pre = document.createElement('pre'); pre.id = 'diagnostic-sauvegarde'; pre.textContent = JSON.stringify(d); document.body.appendChild(pre);
+  })();</script>`;
+  let html = readFileSync(join(copie, 'index.html'), 'utf8');
+  // La vraie balise <head>, seule sur sa ligne (le commentaire d’en-tête de index.html cite aussi « <head> »)
+  html = html.replace(/^<head>$/m, () => `<head>\n${injection}`).replace('<script src="tests.js"></script>', `<script src="tests.js"></script>\n${diagnostic}`);
+  writeFileSync(join(copie, 'index.html'), html);
+  const resultat = executer(copie);
+  rmSync(copie, { recursive: true, force: true });
+  const brut = (resultat.dom.match(/<pre id="diagnostic-sauvegarde">([\s\S]*?)<\/pre>/) || [, ''])[1];
+  const lu = brut.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&nbsp;/g, '\u00a0').replace(/&amp;/g, '&');
+  let d = {};
+  try { d = JSON.parse(lu || '{}'); } catch { d = { erreur: 'diagnostic illisible' }; }
+  console.log(`Sauvegarde : ${fichier} (version ${Array.isArray(avant) ? '1 (tableau nu)' : avant.version}, ${ticketsAvant} tickets)\n`);
+  const versionAvant = Array.isArray(avant) ? 1 : avant.version;
+  const affichageAvant = !Array.isArray(avant) && avant.affichage ? avant.affichage : {};
+  const migration = versionAvant < d.versionApp;
+  const controles = [
+    ['la sauvegarde a bien été placée dans le navigateur avant le démarrage', d.injectee === true],
+    ['aucune erreur JavaScript au démarrage', resultat.erreursJs.length === 0 && !d.erreur],
+    [migration ? `migration v${versionAvant} → v${d.versionApp} annoncée (et non la démonstration à la place)` : 'sauvegarde reprise telle quelle (pas de démonstration à la place)',
+      migration ? /mise à jour|convertie/.test(d.bandeau || '') : !/illisible|plus récente/.test(d.bandeau || '')],
+    [`vue et « Je suis » conservés (${affichageAvant.vue || 'backlog'} / ${affichageAvant.utilisateur || '(vide)'})`,
+      (affichageAvant.vue || 'backlog') === d.vue && (versionAvant < 3 || (affichageAvant.utilisateur || '') === (d.utilisateur || ''))],
+    ['la sauvegarde n’a pas été rejetée (pas de copie « taskflow-illisible »)', d.illisible === false],
+    [`réécrite dans la version actuelle (v${d.versionApp})`, d.version !== undefined && d.version === d.versionApp],
+    [`aucun ticket perdu (${ticketsAvant} avant, ${d.tickets} après)`, d.tickets === ticketsAvant]
+  ];
+  for (const [libelle, ok] of controles) console.log(`${ok ? '✔' : '✘'} ${libelle}`);
+  console.log(`  message affiché : ${d.bandeau || '(aucun)'}\n  projets : ${(d.projets || []).join(', ')} · vue ${d.vue} · « Je suis » : ${d.utilisateur || '(vide)'}\n`);
+  const tousVerts = afficher(resultat);
+  const ok = controles.every(([, valide]) => valide) && tousVerts;
+  console.log(ok ? '\n✔ SAUVEGARDE RECHARGÉE SANS ERREUR' : '\n✘ PROBLÈME AU RECHARGEMENT DE LA SAUVEGARDE');
+  process.exit(ok ? 0 : 1);
 }
 
 process.exit(afficher(executer(resolve(RACINE))) ? 0 : 1);
