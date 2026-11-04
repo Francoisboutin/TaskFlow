@@ -168,6 +168,123 @@ Section **« Sprints »** sous les vues : choix du sprint, **« + Nouveau sprint
 ### Impacts sur l'existant
 
 - **Modèle de ticket** : 9 champs au lieu de 8. Les tests **T9** et **T11** qui vérifient la liste exacte des champs doivent attendre `…, assigne, sprintId`.
-- **Sauvegarde** : version 3 → 4 (`VERSION_SAUVEGARDE = 4`) ; la v3 devient une migration (B1.10b).
+- **Sauvegarde** : version 3 → 4 (`VERSION_SAUVEGARDE = 4`) ; la v3 devient une migration (B1.7b).
 - **Clôture** : remettre un ticket dans la colonne Backlog n'est pas noté au journal des déplacements ; une annulation ultérieure qui le concerne est refusée proprement (« a changé de colonne depuis »), comme aujourd'hui.
 - Les règles R1 à R5 et I1 à I5 sont inchangées.
+
+---
+
+## B2 · Dépendances et blocages
+
+- **Sujet** : `dependances`
+- **Demande** : « Dépendances & blocages (Sécuriser). Déclarer "bloqué par" un ou plusieurs tickets. Interdit d'entrer En cours si un bloquant n'est pas terminé. Badge 🔒 listant les bloquants. Supprimer un ticket nettoie toutes les références. La règle qui piège : les cycles A → B → C → A : refusés, avec le cycle affiché dans le message. Données : `ticket.bloquePar = []`. »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+Un ticket dépend parfois d'un autre (une API avant l'écran qui l'appelle). L'équipe veut le dire, le voir, et ne pas commencer un travail dont les prérequis ne sont pas terminés, sans jamais créer d'attente circulaire où personne ne pourrait commencer.
+
+### Données
+
+**Ticket** : un 10e champ, **`bloquePar`**, après `sprintId` : la liste des numéros des tickets **du même projet** qu'il attend, sans doublon, jamais lui-même ; `[]` par défaut.
+Ordre des champs : `id, titre, type, priorite, points, statut, creeLe, assigne, sprintId, bloquePar`.
+
+**Définitions**
+- « A est bloqué par B » : A attend B. On le note A → B.
+- Un **bloquant actif** est un bloquant qui n'est **pas terminé** (pas dans la dernière colonne).
+- **Zone de travail** : la colonne « En cours » et toutes les colonnes situées après elle (« En revue », « Terminé »).
+
+### Critères d'acceptation (8)
+
+Fonctions pures (zone 2), tableaux reçus jamais modifiés (R4), erreurs renvoyées et jamais levées. Messages mot pour mot (`␣:` = espace insécable).
+
+#### B2.1 · Déclarer les bloquants — `definirBloquants(tickets, id, bloquePar)`
+
+Remplace la liste des bloquants du ticket `id`. Renvoie `{ ok: true, tickets }` ou `{ ok: false, erreur }`.
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | #1 bloqué par `[2, 3]` | `ok: true` ; `bloquePar` de #1 = `[2, 3]` ; seul #1 change ; tableau reçu intact |
+| b | `[3, 2, 3]` | doublon retiré, ordre de déclaration gardé : `[3, 2]` |
+| c | `[]` | #1 n'est plus bloqué |
+| d | un ticket **déjà en cours** reçoit un bloquant non terminé | accepté (on découvre une dépendance en cours de route) : il reste où il est |
+| e | `modifierTicket(…, { bloquePar: [9] })` | ignoré : les bloquants ne changent que par `definirBloquants` (et B2.6) |
+
+#### B2.2 · Refuser une déclaration impossible
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | ticket 99 inexistant | `Ticket introuvable (id 99)` |
+| b | bloquant 99 inexistant (ou d'un autre projet : absent du tableau) | `Ticket bloquant introuvable (id 99)` |
+| c | `bloquePar` qui n'est pas une liste de numéros (`'2'`, `[1.5]`) | `Liste de bloquants invalide` |
+| d | liste de tickets contenant un élément vide | `Liste de tickets invalide`, sans exception |
+
+#### B2.3 · Refuser les cycles, en affichant le cycle (la règle qui piège)
+
+Le cycle affiché part du ticket modifié et suit le plus court chemin d'attente jusqu'à lui.
+
+| Cas | Étant donné | Quand | Alors |
+|---|---|---|---|
+| a | #1 → #2, #2 → #3 | #3 bloqué par `[1]` | `Cycle refusé␣: #3 → #1 → #2 → #3` ; rien ne change |
+| b | #1 → #2 | #2 bloqué par `[1]` | `Cycle refusé␣: #2 → #1 → #2` |
+| c | — | #4 bloqué par `[4]` | `Cycle refusé␣: #4 → #4` |
+| d | #1 → #2, #1 → #3 (losange, sans boucle) | #2 bloqué par `[3]` | accepté : deux chemins vers un même ticket ne font pas un cycle |
+| e | #1 → #2 → #3 | #3 bloqué par `[4, 1]` | le cycle par #1 est signalé : `Cycle refusé␣: #3 → #1 → #2 → #3` |
+
+#### B2.4 · Interdire d'entrer dans la zone de travail — `deplacerTicket` (nouvelle règle R6)
+
+Contrôles de `deplacerTicket` dans cet ordre : R2 (Definition of Ready), **R6 (bloqué)**, R5 (passage obligé), R1 (WIP).
+
+| Cas | Étant donné | Quand | Alors |
+|---|---|---|---|
+| a | #2 bloqué par #3 (À faire) et #5 (Terminé) | #2 → « En cours » | `Bloqué␣: #2 attend #3` (seuls les bloquants actifs sont cités) |
+| b | #2 bloqué par #3 et #4, aucun terminé | #2 → « En revue » (saut direct) | `Bloqué␣: #2 attend #3, #4` |
+| c | #2 bloqué et **déjà** en cours | #2 → « En revue » | refusé (même message) ; #2 → « À faire » ou « Backlog » : accepté (reculer reste permis) |
+| d | tous les bloquants de #2 terminés | #2 → « En cours » | accepté |
+| e | #2 bloqué par #3 non terminé | #2 → « À faire » | accepté (hors zone de travail) |
+
+#### B2.5 · Lister les bloquants actifs (badge 🔒) — `bloquantsActifs(ticket, tickets)`
+
+| Cas | Alors |
+|---|---|
+| a | renvoie les numéros des bloquants **non terminés**, dans l'ordre de déclaration (`[3, 4]`) |
+| b | tous terminés, ou aucun bloquant → `[]` (pas de badge) |
+| c | un numéro qui ne correspond à aucun ticket est ignoré |
+
+#### B2.6 · Supprimer un ticket nettoie toutes les références — `retirerDesBloquants(tickets, id)`
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | #3 supprimé alors que #1 → [3, 2] et #2 → [3] | #1 → `[2]`, #2 → `[]` ; tableau reçu intact ; les tickets non concernés sont les mêmes objets |
+| b | suppression dans l'application | le ticket disparaît, et plus aucun ticket du projet ne le cite (les tickets bloqués par lui sont débloqués) |
+
+#### B2.7 · Sauvegarde v5 (« sauvegarde d'hier » en v4), import et export
+
+| Cas | Quand | Alors |
+|---|---|---|
+| a | aller-retour d'une sauvegarde avec bloquants | `origine: 'sauvegarde'` ; `bloquePar` identiques |
+| b | **sauvegarde version 4** (avec sprints) | `origine: 'migration-v4'` ; chaque ticket a `bloquePar: []` ; **sprints et `sprintId` conservés** ; rien d'autre de perdu |
+| c | sauvegardes v1, v2, v3 | toujours migrées ; tickets à 10 champs |
+| d | v5 abîmée : bloquant inconnu, lui-même, en double, d'un autre projet, ou qui ferme un cycle | ces liens sont retirés (dans l'ordre des tickets, le lien qui ferme le cycle est retiré, les précédents sont gardés) ; rien ne plante |
+| e | version 6 | `origine: 'version-inconnue'` |
+| f | export CSV ou JSON | pas de `bloquePar` (colonnes inchangées) |
+| g | import d'un fichier avec une colonne `bloquePar` | tickets importés avec `bloquePar: []` ; colonne signalée « hors du modèle, ignorée » |
+
+#### B2.8 · Interface (vérifiée à la main)
+
+- Formulaire « Ajouter / Modifier » : champ **« Bloqué par »** (numéros séparés par des virgules, `#` accepté), avec les erreurs de B2.2 et B2.3 sous le champ.
+- Liste et Kanban : **badge 🔒** sur un ticket qui a des bloquants actifs, listant leurs numéros (et leurs titres au survol).
+- Refus R6 (glisser, boutons ◀ ▶, formulaire) expliqué : quels tickets terminer d'abord.
+- Fenêtre « Supprimer » : annonce les tickets qui ne seront plus bloqués.
+
+### Hors périmètre
+
+- Dépendances entre projets ; graphe visuel des dépendances.
+- Empêcher de **terminer** un bloquant ou de le faire reculer (seule l'entrée du bloqué dans la zone de travail est contrôlée).
+- Annuler (Ctrl+Z) une déclaration de bloquants.
+
+### Impacts sur l'existant
+
+- **Modèle de ticket** : 10 champs. Les tests qui vérifient la liste exacte des champs (T9, T11, T27) attendent `…, sprintId, bloquePar`.
+- **Sauvegarde** : version 4 → 5 (`VERSION_SAUVEGARDE = 5`). Une sauvegarde v4 devient une migration (`migration-v4`) : les tests de B1.7 qui supposaient « v4 = version actuelle » (T27 : constante, sauvegarde abîmée en v4, « version 5 inconnue ») doivent suivre.
+- **`deplacerTicket`** : nouvelle règle R6. R1 à R5 inchangées ; un ticket sans bloquant se déplace exactement comme avant.
