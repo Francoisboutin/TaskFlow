@@ -13,7 +13,7 @@
      JS 3   Validation d’un ticket
      JS 4   Règles métier : fonctions pures (deplacerTicket, modifierTicket, calculerStats)
      JS 5   Import et export : fonctions pures (CSV, JSON)
-     JS 5b  Sprints et burndown : fonctions pures (B1)
+     JS 5b  Sprints et burndown : fonctions pures (B1) ; sprints en cours et tickets du Kanban (B5)
      JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2)
      JS 5d  Échéances et calendrier : fonctions pures (B3)
    ── Zone 3 · UI
@@ -919,6 +919,18 @@
     if (!ticket || ticket.sprintId === null || ticket.sprintId === undefined) return null;
     const sprint = sprintDeNumero(sprints, ticket.sprintId);
     return sprint && sprint.statut === SPRINT_OUVERT ? sprint : null;
+  }
+  // B5.1 · Sprints en cours (« démarrés ») : ouverts et commencés, même après leur date de fin tant qu’ils ne sont pas clôturés
+  const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut <= aujourdhui);
+  // B5.2 à B5.5 · Tickets du Kanban : pendant un sprint, seulement les siens (terminés compris) ; sans sprint en cours, tous.
+  // → { sprints, tickets, horsSprint } (tickets : les objets reçus, dans l’ordre reçu)
+  function ticketsDuKanban(tickets, sprints, aujourdhui) {
+    const liste = Array.isArray(tickets) ? tickets : [];
+    const enCours = sprintsEnCours(sprints, aujourdhui);
+    if (!enCours.length) return { sprints: [], tickets: liste.slice(), horsSprint: 0 };
+    const numeros = new Set(enCours.map(sprint => sprint.id));
+    const affiches = liste.filter(ticket => ticket && numeros.has(ticket.sprintId));
+    return { sprints: enCours, tickets: affiches, horsSprint: liste.length - affiches.length };
   }
   const ticketsDuSprint = (tickets, sprint) => (Array.isArray(tickets) ? tickets : []).filter(ticket => ticket && ticket.sprintId === sprint.id);
   const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).reduce((total, ticket) => total + pointsDe(ticket), 0);
@@ -2159,8 +2171,30 @@
     return `<span class="kb-points" title="${pluriel(colonne.points, 'point')} de complexité${nonEstimes}">${colonne.points}<span class="kb-points-unite" aria-hidden="true">\u00a0${unite}</span><span class="sr-only"> point${colonne.points > 1 ? 's' : ''} de complexité${nonEstimes}</span></span>`;
   }
 
+  // B5 · Tickets hors du sprint en cours, par colonne (ils comptent dans la limite WIP, règle R1, sans être affichés)
+  function horsSprintParColonne(projet, enCours) {
+    const parColonne = new Map();
+    if (!enCours.length) return parColonne;
+    const numeros = new Set(enCours.map(sprint => sprint.id));
+    for (const ticket of projet.tickets) if (!numeros.has(ticket.sprintId)) parColonne.set(ticket.statut, (parColonne.get(ticket.statut) || 0) + 1);
+    return parColonne;
+  }
+  // B5.6 · Bandeau au-dessus du Kanban pendant un sprint
+  function rendreBandeauSprintKanban(projet, enCours) {
+    const bandeau = trouver('#kb-sprint');
+    bandeau.hidden = !enCours.length;
+    if (!enCours.length) return;
+    const numeros = new Set(enCours.map(sprint => sprint.id));
+    const dans = projet.tickets.filter(ticket => numeros.has(ticket.sprintId)).length;
+    const autres = projet.tickets.length - dans;
+    const noms = enCours.map(sprint => `«\u00a0${echapper(sprint.nom)}\u00a0» (du ${dateCourte(sprint.debut)} au ${dateCourte(sprint.fin)})`).join(' et ');
+    remplacerContenu(bandeau, `<span><strong>${enCours.length > 1 ? 'Sprints en cours' : 'Sprint en cours'}\u00a0:</strong> ${noms} · ${pluriel(dans, 'ticket')}.`
+      + `${autres ? ` ${autres > 1 ? `Les ${autres} autres tickets sont` : 'L’autre ticket est'} dans le Backlog.` : ''}</span>`
+      + (autres ? ' <button type="button" class="btn btn-texte" data-voir-backlog>Voir le Backlog</button>' : ''));
+  }
+
   // statsDuProjet : la limite WIP porte sur TOUS les tickets ; statsAffichees : les pourcentages portent sur ceux affichés
-  function rendreKanban(visibles, motsTapes, statsDuProjet, statsAffichees) {
+  function rendreKanban(visibles, motsTapes, statsDuProjet, statsAffichees, horsSprint = new Map()) {
     page.kanban.style.setProperty('--nb-colonnes', COLONNES.length);
     const cartesParColonne = new Map(COLONNES.map(colonne => [colonne.id, []]));
     for (const ticket of visibles) if (cartesParColonne.has(ticket.statut)) cartesParColonne.get(ticket.statut).push(ticket);
@@ -2168,7 +2202,7 @@
       const cartes = cartesParColonne.get(colonne.id);
       const reel = statsDuProjet.colonnes[rang];
       const indicateurWip = colonne.wip === null ? '' :
-        `<span class="kb-wip${reel.plein ? ' is-plein' : ''}" title="Limite de tickets en même temps (WIP)">WIP ${reel.nombre}/${colonne.wip}${reel.plein ? ', limite atteinte' : ''}</span>`;
+        `<span class="kb-wip${reel.plein ? ' is-plein' : ''}" title="Limite de tickets en même temps (WIP)">WIP ${reel.nombre}/${colonne.wip}${horsSprint.get(colonne.id) ? ` · dont ${horsSprint.get(colonne.id)} hors sprint` : ''}${reel.plein ? ', limite atteinte' : ''}</span>`;
       return `<section class="kb-col couleur-${colonne.id}${reel.plein ? ' is-plein' : ''}" data-colonne="${colonne.id}" aria-labelledby="kb-titre-${colonne.id}">
         <header class="kb-tete">
           <h3 id="kb-titre-${colonne.id}">${echapper(colonne.titre)}</h3>
@@ -2282,7 +2316,10 @@
 
     // Seule la vue visible est reconstruite ; l’autre le sera quand on l’affichera (JS 18)
     if (etat.vue === 'kanban') {
-      rendreKanban(visibles, motsTapes, statsDuProjet, statsAffichees);
+      // B5 : pendant un sprint, le Kanban n’affiche que ses tickets (recherche et filtres compris)
+      const kanban = ticketsDuKanban(visibles, projet.sprints, aujourdhuiIso());
+      rendreBandeauSprintKanban(projet, kanban.sprints);
+      rendreKanban(kanban.tickets, motsTapes, statsDuProjet, kanban.sprints.length ? calculerStats(kanban.tickets) : statsAffichees, horsSprintParColonne(projet, kanban.sprints));
     } else if (etat.vue === 'calendrier') {
       rendreCalendrier(visibles);
     } else {
@@ -2290,6 +2327,16 @@
       rendreTableau(visibles, motsTapes, tousLesTickets.length);
     }
   }
+
+  // B5.7 · En vue Kanban pendant un sprint, un ticket affichable (recherche et filtres) peut être hors du sprint
+  function ticketHorsDuKanban(id) {
+    if (etat.vue !== 'kanban' || !idsAffiches.includes(id)) return false;
+    const projet = projetActif();
+    const ticket = projet.tickets.find(element => element.id === id);
+    const enCours = sprintsEnCours(projet.sprints, aujourdhuiIso());
+    return !!ticket && enCours.length > 0 && !enCours.some(sprint => sprint.id === ticket.sprintId);
+  }
+  const allerAuBacklog = { libelle: 'Voir le Backlog', faire: () => afficherVue('backlog') };
 
   // Élément qui contient les tickets de la vue affichée (Backlog, Kanban ou Calendrier)
   const conteneurDeLaVue = () => (etat.vue === 'kanban' ? page.kanban : etat.vue === 'calendrier' ? calendrierUI.grille : etat.vue === 'sprints' ? sprintsUI.vue : page.liste);
@@ -2507,6 +2554,10 @@
     fermerFenetre(page.fenetreTicket);
     rendre();
     if (enModification) { apresModification(ticket, resultat.inchange && !notePriseEnCompte, notePriseEnCompte); return; }
+    if (ticketHorsDuKanban(ticket.id)) {
+      notifier(`Ticket #${ticket.id} ajouté au backlog. Il n’est pas dans le sprint en cours\u00a0: retrouvez-le dans la vue Backlog.`, allerAuBacklog);
+      return;
+    }
     if (surlignerTicket(ticket.id)) {
       notifier(projetActif().ordreManuel
         ? `Ticket #${ticket.id} ajouté en bas de votre ordre personnalisé.`
@@ -2524,6 +2575,10 @@
   function apresModification(ticket, inchange, notePriseEnCompte = false) {
     ticketEnModification = null;
     if (inchange) { notifier('Aucune modification à enregistrer.'); return; }
+    if (ticketHorsDuKanban(ticket.id)) {
+      notifier(`Ticket #${ticket.id} modifié. Il n’est pas dans le sprint en cours\u00a0: retrouvez-le dans la vue Backlog.`, allerAuBacklog);
+      return;
+    }
     const message = notePriseEnCompte ? `Ticket #${ticket.id} modifié, corrections de l’import prises en compte.` : `Ticket #${ticket.id} modifié.`;
     const conteneur = conteneurDeLaVue();
     if (surlignerTicket(ticket.id)) {
@@ -4298,6 +4353,7 @@
     rendre();
   };
   calendrierUI.precedent.addEventListener('click', () => changerDeMois(-1));
+  trouver('#kb-sprint').addEventListener('click', evenement => { if (evenement.target.closest('[data-voir-backlog]')) afficherVue('backlog'); });
   calendrierUI.suivant.addEventListener('click', () => changerDeMois(1));
   calendrierUI.courant.addEventListener('click', () => { etat.moisAffiche = null; rendre(); });
   calendrierUI.grille.addEventListener('click', evenement => {
@@ -4822,6 +4878,8 @@
     definirBloquants, bloquantsActifs, retirerDesBloquants,
     // B3 · Échéances et calendrier (JS 5d, et le tri de JS 8)
     urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
+    // B5 · Kanban du sprint en cours (JS 5b)
+    sprintsEnCours, ticketsDuKanban,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
