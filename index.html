@@ -489,6 +489,13 @@
         <input id="f-assigne" name="assigne" class="input" type="text" maxlength="40" list="liste-assignes" autocomplete="off" placeholder="ex.&nbsp;: Camille">
         <p class="erreur" id="err-assigne" hidden></p>
       </div>
+      <!-- bloquePar : facultatif (v5, B2) ; cycles et numéros inconnus refusés -->
+      <div class="champ">
+        <label for="f-bloque">Bloqué par <span class="oblig">(facultatif)</span></label>
+        <input id="f-bloque" name="bloquePar" class="input" type="text" inputmode="numeric" autocomplete="off" placeholder="ex.&nbsp;: 3, 5" aria-describedby="f-bloque-aide err-bloquePar">
+        <div class="champ-pied"><span id="f-bloque-aide">Numéros des tickets à terminer avant de commencer celui-ci, séparés par des virgules. Tant qu’ils ne sont pas terminés, il ne peut pas entrer «&nbsp;En cours&nbsp;».</span></div>
+        <p class="erreur" id="err-bloquePar" hidden></p>
+      </div>
       <!-- En modification, si le ticket a été corrigé à l’import : rappel et confirmation -->
       <div class="note-form" id="f-note" hidden>
         <p class="note-form-titre"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8l6.6 11.6H1.4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.2v3.4M8 11.6v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Corrigé à l’import</p>

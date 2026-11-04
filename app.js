@@ -14,6 +14,7 @@
      JS 4   Règles métier : fonctions pures (deplacerTicket, modifierTicket, calculerStats)
      JS 5   Import et export : fonctions pures (CSV, JSON)
      JS 5b  Sprints et burndown : fonctions pures (B1)
+     JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2)
    ── Zone 3 · UI
      JS 6   État de l’application et actions sur les données
      JS 7   Recherche tolérante : casse, accents, fautes de frappe
@@ -68,7 +69,7 @@
   const COLONNES = [
     { id: "backlog", titre: "Backlog",  wip: null },
     { id: "afaire",  titre: "À faire",  wip: null },
-    { id: "encours", titre: "En cours", wip: 3 },
+    { id: "encours", titre: "En cours", wip: 3, debutTravail: true },   // R6 : début de la zone de travail (B2)
     { id: "enrevue", titre: "En revue", wip: 2 },
     { id: "termine", titre: "Terminé",  wip: null, depuis: ["enrevue"] },   // R5 : on n’y entre que depuis « En revue »
   ];
@@ -105,7 +106,7 @@
   // Sauvegarde des données (JS 22) : une enveloppe versionnée, sous une seule clé
   const CLE_SAUVEGARDE = 'taskflow';
   const CLE_SAUVEGARDE_ILLISIBLE = 'taskflow-illisible';   // copie d’une sauvegarde abîmée, gardée à part
-  const VERSION_SAUVEGARDE = 4;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints et ticket.sprintId
+  const VERSION_SAUVEGARDE = 5;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints, ticket.sprintId ; v5 : ticket.bloquePar
 
   // Les 12 tickets du projet de démonstration « Refonte de l’espace client »
   const TICKETS_INITIAUX = [
@@ -217,6 +218,9 @@
       erreurs.assigne = `Le nom de la personne assignée fait au plus ${ASSIGNE_MAX} caractères (laissez vide si personne).`;
     }
     if (!(ticket.sprintId === null || (Number.isInteger(ticket.sprintId) && ticket.sprintId >= 1))) erreurs.sprintId = 'Le sprint du ticket doit être un numéro de sprint, ou aucun.';
+    if (!Array.isArray(ticket.bloquePar) || ticket.bloquePar.some(numero => !Number.isInteger(numero) || numero < 1 || numero === ticket.id) || new Set(ticket.bloquePar).size !== ticket.bloquePar.length) {
+      erreurs.bloquePar = 'Les bloquants doivent être des numéros d’autres tickets, sans doublon.';
+    }
     return erreurs;
   }
 
@@ -233,7 +237,9 @@
       // v3 : personne assignée, ou null (les tickets d’avant n’ont pas ce champ : ils reçoivent null)
       assigne: typeof donnees.assigne === 'string' && donnees.assigne.trim() ? donnees.assigne.trim().replace(/\s+/g, ' ') : null,
       // v4 (B1) : numéro du sprint du ticket, ou null (hors sprint)
-      sprintId: Number.isInteger(donnees.sprintId) && donnees.sprintId >= 1 ? donnees.sprintId : null
+      sprintId: Number.isInteger(donnees.sprintId) && donnees.sprintId >= 1 ? donnees.sprintId : null,
+      // v5 (B2) : numéros des tickets qu’il attend, sans doublon
+      bloquePar: Array.isArray(donnees.bloquePar) ? [...new Set(donnees.bloquePar.filter(numero => Number.isInteger(numero) && numero >= 1))] : []
     };
   }
 
@@ -260,6 +266,12 @@
     // R2 · Definition of Ready : un ticket non estimé ne quitte pas le Backlog
     if (ticket.points === null && versStatut !== COLONNE_BACKLOG.id) {
       return { ok: false, erreur: `Definition of Ready\u00a0: le ticket #${id} n’est pas estimé` };
+    }
+
+    // R6 · Bloqué (B2) : un ticket qui attend un ticket non terminé n’entre pas dans la zone de travail
+    if (RANG_DEBUT_TRAVAIL >= 0 && COLONNES.indexOf(colonneCible) >= RANG_DEBUT_TRAVAIL) {
+      const attend = bloquantsActifs(ticket, tickets);
+      if (attend.length) return { ok: false, erreur: `Bloqué\u00a0: #${id} attend ${attend.map(numero => `#${numero}`).join(', ')}` };
     }
 
     // R5 · Passage obligé : une colonne qui a « depuis » n’accepte que les tickets venant de ces colonnes
@@ -389,7 +401,7 @@
   // modifierTicket(tickets, id, changements)
   //   → { ok: true,  tickets: nouveauTableau, ticket: ticketModifie }
   //   → { ok: false, erreurs: { champ: message } }
-  // Le numéro (id), la date de création (creeLe) et le sprint (sprintId) ne changent jamais ici.
+  // Le numéro (id), la date de création (creeLe), le sprint (sprintId) et les bloquants (bloquePar) ne changent jamais ici.
   // Un changement de statut passe par deplacerTicket : les règles R1 et R2 s’appliquent.
   // sprints (facultatif, B1.5) : pour un ticket d’un sprint ouvert, ses points restent estimés
   // et ne peuvent pas augmenter au-delà de la capacité du sprint.
@@ -399,7 +411,7 @@
 
     // 1. Les nouveaux champs, contrôlés comme pour une création (le statut est traité à l’étape 2)
     const statutVoulu = changements.statut === undefined ? ticketActuel.statut : changements.statut;
-    const ticketCandidat = construireTicket({ ...ticketActuel, ...changements, id: ticketActuel.id, creeLe: ticketActuel.creeLe, statut: ticketActuel.statut, sprintId: ticketActuel.sprintId });
+    const ticketCandidat = construireTicket({ ...ticketActuel, ...changements, id: ticketActuel.id, creeLe: ticketActuel.creeLe, statut: ticketActuel.statut, sprintId: ticketActuel.sprintId, bloquePar: ticketActuel.bloquePar });
     const erreurs = validerTicket(ticketCandidat);
     if (!STATUTS.some(statut => statut.valeur === statutVoulu)) erreurs.statut = 'Choisissez un statut\u00a0: Backlog, À faire, En cours ou Terminé.';
     if (Object.keys(erreurs).length) return { ok: false, erreurs };
@@ -422,10 +434,10 @@
     //    La capacité n’est vérifiée que si les points augmentent (un titre se modifie toujours).
     const sprint = sprintOuvertDe(ticketModifie, sprints);
     if (sprint) {
-      if (ticketModifie.points === null) return { ok: false, erreurs: { points: 'Definition of Ready : un ticket d’un sprint doit rester estimé.' } };
+      if (ticketModifie.points === null) return { ok: false, erreurs: { points: 'Definition of Ready\u00a0: un ticket d’un sprint doit rester estimé.' } };
       const engages = pointsEngages(nouveauxTickets, sprint);
       if (ticketModifie.points > (ticketActuel.points || 0) && engages > sprint.capacite) {
-        return { ok: false, erreurs: { points: `Capacité dépassée (${engages}/${sprint.capacite} points) dans le sprint « ${sprint.nom} ».` } };
+        return { ok: false, erreurs: { points: `Capacité dépassée (${engages}/${sprint.capacite} points) dans le sprint «\u00a0${sprint.nom}\u00a0».` } };
       }
     }
     return { ok: true, tickets: nouveauxTickets, ticket: ticketModifie };
@@ -439,6 +451,7 @@
 
   function expliquerRefus(erreur, versStatut) {
     const colonne = COLONNES.find(element => element.id === versStatut);
+    if (/^Bloqué/.test(erreur)) return `${erreur}. Terminez d’abord ce qu’il attend, ou retirez le blocage (bouton Modifier, champ «\u00a0Bloqué par\u00a0»).`;
     if (/^Passage interdit/.test(erreur) && colonne) return `${erreur}. Faites d’abord passer le ticket par ${originesAdmises(colonne)}.`;
     if (/^WIP/.test(erreur) && colonne) {
       return `${erreur}\u00a0: la colonne «\u00a0${colonne.titre}\u00a0» accepte au maximum ${colonne.wip} tickets. Terminez ou déplacez un ticket «\u00a0${colonne.titre}\u00a0» avant d’en ajouter un autre.`;
@@ -452,6 +465,7 @@
   // Même chose pour le formulaire (création ou modification) : le conseil porte sur le statut choisi
   function expliquerRefusFormulaire(erreur, statut) {
     const colonne = COLONNES.find(element => element.id === statut);
+    if (/^Bloqué/.test(erreur)) return `${erreur}. Choisissez un statut avant «\u00a0${RANG_DEBUT_TRAVAIL >= 0 ? COLONNES[RANG_DEBUT_TRAVAIL].titre : ''}\u00a0», ou videz le champ «\u00a0Bloqué par\u00a0».`;
     if (/^Passage interdit/.test(erreur) && colonne) return `${erreur}. Choisissez d’abord ${originesAdmises(colonne)}.`;
     if (/^WIP/.test(erreur) && colonne) {
       return `${erreur}\u00a0: la colonne «\u00a0${colonne.titre}\u00a0» accepte au maximum ${colonne.wip} tickets. Choisissez un autre statut.`;
@@ -947,9 +961,9 @@
     if (!ticket) return refus(`Ticket introuvable (id ${idTicket})`);
     const sprint = sprintDeNumero(sprints, idSprint);
     if (!sprint) return refus(`Sprint introuvable (id ${idSprint})`);
-    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé : on ne peut plus le modifier');
+    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé\u00a0: on ne peut plus le modifier');
     if (ticket.sprintId === sprint.id) return { ok: true, tickets: tickets.slice() };          // déjà dedans : pas compté deux fois
-    if (typeof ticket.points !== 'number') return refus(`Definition of Ready : le ticket #${idTicket} n’est pas estimé`);
+    if (typeof ticket.points !== 'number') return refus(`Definition of Ready\u00a0: le ticket #${idTicket} n’est pas estimé`);
     if (estTermine(ticket)) return refus(`Le ticket #${idTicket} est déjà terminé`);
     const total = pointsEngages(tickets, sprint) + ticket.points;
     if (total > sprint.capacite) return refus(`Capacité dépassée (${total}/${sprint.capacite} points)`);   // pile = accepté
@@ -971,7 +985,7 @@
     if (listeInvalide(tickets)) return refus('Liste de tickets invalide');
     const sprint = sprintDeNumero(sprints, idSprint);
     if (!sprint) return refus(`Sprint introuvable (id ${idSprint})`);
-    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé : on ne peut plus le modifier');
+    if (sprint.statut !== SPRINT_OUVERT) return refus('Sprint clôturé\u00a0: on ne peut plus le modifier');
     const engage = pointsEngages(tickets, sprint);
     const restant = pointsRestants(tickets, sprint);
     const retournes = [];
@@ -1050,6 +1064,98 @@
     return sprints;
   }
 
+  /* ========================================================================
+     JS 5c · DÉPENDANCES ET BLOCAGES — FONCTIONS PURES (B2, docs/spec.md)
+     ticket.bloquePar : les numéros des tickets du même projet qu’il attend.
+     « A bloqué par B » se note A → B (A attend B).
+     – Un cycle (A → B → C → A, ou A → A) est refusé, et le message l’affiche.
+     – Règle R6 (dans deplacerTicket) : un ticket qui a un bloquant actif
+       (non terminé) n’entre pas dans la zone de travail : la colonne marquée
+       debutTravail (« En cours ») et toutes les colonnes suivantes.
+     ======================================================================== */
+  const RANG_DEBUT_TRAVAIL = COLONNES.findIndex(colonne => colonne.debutTravail);   // -1 : aucune zone de travail
+  const FORMAT_BLOQUANTS = 'Écrivez des numéros de tickets séparés par des virgules (ex.\u00a0: 3, 5).';
+
+  // Numéros des bloquants non terminés, dans l’ordre de déclaration ; un numéro inconnu est ignoré
+  function bloquantsActifs(ticket, tickets) {
+    const liste = Array.isArray(tickets) ? tickets : [];
+    return (ticket && Array.isArray(ticket.bloquePar) ? ticket.bloquePar : []).filter(numero => {
+      const bloquant = liste.find(element => element && element.id === numero);
+      return !!bloquant && !estTermine(bloquant);
+    });
+  }
+
+  // Plus court chemin d’attente de « depart » jusqu’à « arrivee » (parcours en largeur), ou null.
+  // aretes(id) → les numéros qu’attend le ticket id.
+  function cheminDAttente(aretes, depart, arrivee) {
+    const precedent = new Map([[depart, null]]);
+    const file = [depart];
+    while (file.length) {
+      const courant = file.shift();
+      if (courant === arrivee) {
+        const chemin = [];
+        for (let etape = courant; etape !== null; etape = precedent.get(etape)) chemin.unshift(etape);
+        return chemin;
+      }
+      for (const suivant of aretes(courant)) if (!precedent.has(suivant)) { precedent.set(suivant, courant); file.push(suivant); }
+    }
+    return null;
+  }
+  function aretesDe(tickets) {
+    const parNumero = new Map(tickets.map(ticket => [ticket.id, ticket]));
+    return id => {
+      const ticket = parNumero.get(id);
+      return ticket && Array.isArray(ticket.bloquePar) ? ticket.bloquePar.filter(numero => parNumero.has(numero)) : [];
+    };
+  }
+
+  // B2.1 à B2.3 · definirBloquants(tickets, id, bloquePar) → { ok, tickets } ou { ok: false, erreur }
+  function definirBloquants(tickets, id, bloquePar) {
+    if (listeInvalide(tickets)) return refus('Liste de tickets invalide');
+    const ticket = tickets.find(element => element.id === id);
+    if (!ticket) return refus(`Ticket introuvable (id ${id})`);
+    if (!Array.isArray(bloquePar) || bloquePar.some(numero => !Number.isInteger(numero) || numero < 1)) return refus('Liste de bloquants invalide');
+    const liste = [...new Set(bloquePar)];                                       // doublons retirés, ordre gardé
+    const inconnu = liste.find(numero => numero !== id && !tickets.some(element => element.id === numero));
+    if (inconnu !== undefined) return refus(`Ticket bloquant introuvable (id ${inconnu})`);
+    // Cycle : le nouveau bloquant attend déjà (même indirectement) le ticket modifié
+    const aretes = aretesDe(tickets);
+    for (const numero of liste) {
+      const chemin = numero === id ? [id] : cheminDAttente(aretes, numero, id);
+      if (chemin) return refus(`Cycle refusé\u00a0: ${[id, ...chemin].map(element => `#${element}`).join(' → ')}`);
+    }
+    return { ok: true, tickets: tickets.map(element => (element.id === id ? { ...element, bloquePar: liste } : element)) };
+  }
+
+  // B2.6 · Après une suppression : plus aucun ticket ne cite « id » ; les autres restent les mêmes objets
+  const retirerDesBloquants = (tickets, id) => tickets.map(ticket => (Array.isArray(ticket.bloquePar) && ticket.bloquePar.includes(id)
+    ? { ...ticket, bloquePar: ticket.bloquePar.filter(numero => numero !== id) } : ticket));
+
+  // B2.7d · Sauvegarde abîmée : seuls restent les liens vers un autre ticket du même projet, sans doublon,
+  // et qui ne ferment pas de cycle (dans l’ordre des tickets : le lien qui ferme le cycle est retiré)
+  function nettoyerBloquants(tickets) {
+    const numeros = new Set(tickets.map(ticket => ticket.id));
+    const gardes = new Map();
+    const aretes = id => gardes.get(id) || [];
+    return tickets.map(ticket => {
+      const brut = Array.isArray(ticket.bloquePar) ? ticket.bloquePar : [];
+      const liste = [];
+      gardes.set(ticket.id, liste);
+      for (const numero of brut) {
+        if (!Number.isInteger(numero) || numero === ticket.id || !numeros.has(numero) || liste.includes(numero)) continue;
+        if (cheminDAttente(aretes, numero, ticket.id)) continue;                 // fermerait un cycle
+        liste.push(numero);
+      }
+      return JSON.stringify(liste) === JSON.stringify(brut) ? ticket : { ...ticket, bloquePar: liste };
+    });
+  }
+
+  // Lit le champ « Bloqué par » du formulaire : « 3, #5 » → [3, 5] ; null si le texte n’est pas une liste de numéros
+  function lireNumerosDeBloquants(texte) {
+    const morceaux = String(texte || '').split(/[\s,;]+/).map(morceau => morceau.replace(/^#/, '')).filter(Boolean);
+    return morceaux.every(morceau => /^\d{1,6}$/.test(morceau)) ? morceaux.map(Number) : null;
+  }
+
   /* ########################################################################
      ZONE 3 · UI (état de l’application, page, actions de l’utilisateur, sauvegarde)
      ######################################################################## */
@@ -1102,10 +1208,14 @@
 
   // Ajoute un ticket au projet actif ; renvoie { ok, ticket } ou { ok: false, erreurs }
   function ajouterTicket(donnees) {
+    if (donnees.bloquePar === null) return { ok: false, erreurs: { bloquePar: FORMAT_BLOQUANTS } };
     const ticket = construireTicket({ ...donnees, id: prochainNumeroLibre(), creeLe: aujourdhuiIso() });
     const erreurs = validerTicket(ticket, numerosUtilises());
     if (Object.keys(erreurs).length) return { ok: false, erreurs };
     const projet = projetActif();
+    // B2 : les bloquants doivent exister dans le projet (un nouveau ticket ne peut pas fermer de cycle)
+    const verification = definirBloquants([...projet.tickets, { ...ticket, statut: COLONNE_BACKLOG.id }], ticket.id, ticket.bloquePar);
+    if (!verification.ok) return { ok: false, erreurs: { bloquePar: verification.erreur } };
     // Un nouveau ticket respecte aussi R1 et R2 : on simule son arrivée dans sa colonne
     if (ticket.statut !== COLONNE_BACKLOG.id) {
       const essai = deplacerTicket([...projet.tickets, { ...ticket, statut: COLONNE_BACKLOG.id }], ticket.id, ticket.statut);
@@ -1138,7 +1248,14 @@
   function enregistrerModification(id, changements) {
     const projet = projetActif();
     const ancien = projet.tickets.find(element => element.id === id);
-    const resultat = modifierTicket(projet.tickets, id, changements, projet.sprints);
+    let tickets = projet.tickets;
+    if (changements.bloquePar === null) return { ok: false, erreurs: { bloquePar: FORMAT_BLOQUANTS } };
+    if (Array.isArray(changements.bloquePar)) {
+      const bloquants = definirBloquants(tickets, id, changements.bloquePar);
+      if (!bloquants.ok) return { ok: false, erreurs: { bloquePar: /^Cycle/.test(bloquants.erreur) ? `${bloquants.erreur}. Retirez l’un de ces liens.` : bloquants.erreur } };
+      tickets = bloquants.tickets;
+    }
+    const resultat = modifierTicket(tickets, id, changements, projet.sprints);
     if (!resultat.ok) return resultat;
     const inchange = JSON.stringify(ancien) === JSON.stringify(resultat.ticket);
     const avant = instantane(projet);
@@ -1152,7 +1269,7 @@
     const projet = projetActif();
     const ticket = projet.tickets.find(element => element.id === id);
     if (!ticket) return null;
-    projet.tickets = projet.tickets.filter(element => element.id !== id);
+    projet.tickets = retirerDesBloquants(projet.tickets.filter(element => element.id !== id), id);   // B2.6 : plus aucune référence
     if (projet.ordreManuel) projet.ordreManuel = projet.ordreManuel.filter(numero => numero !== id);
     delete projet.notesImport[id];
     return ticket;
@@ -1649,6 +1766,15 @@
     return `<span class="assigne${moi ? ' is-moi' : ''}" title="Assigné à ${echapper(ticket.assigne)}">${ICONE_PERSONNE}${echapper(ticket.assigne)}${moi ? ' (vous)' : ''}</span>`;
   }
 
+  // Badge 🔒 (B2.5) : les bloquants actifs du ticket, avec leurs titres au survol
+  function htmlBloquants(ticket) {
+    const tickets = projetActif().tickets;
+    const actifs = bloquantsActifs(ticket, tickets);
+    if (!actifs.length) return '';
+    const detail = actifs.map(numero => { const bloquant = tickets.find(element => element.id === numero); return `#${numero} «\u00a0${bloquant.titre}\u00a0» (${libelleDe(STATUTS, bloquant.statut)})`; }).join(', ');
+    return `<span class="bloque" title="Bloqué par ${echapper(detail)}">${ICONE_CADENAS}<span class="sr-only">Bloqué par </span>${actifs.map(numero => `#${numero}`).join(', ')}</span>`;
+  }
+
   // Mention « Corrigé à l’import » : un bouton qui ouvre la liste des corrections du ticket
   function htmlMentionImport(ticket) {
     const note = projetActif().notesImport[ticket.id];
@@ -1844,7 +1970,7 @@
   function htmlLigne(ticket, motsTapes) {
     return `<tr data-id="${ticket.id}">
       <td class="c-id" data-label="N°"><button type="button" class="poignee" data-poignee="${ticket.id}" title="Glisser pour déplacer ce ticket" aria-label="Déplacer le ticket #${ticket.id}" aria-describedby="aide-deplacer">${ICONE_POIGNEE}</button>#${ticket.id}</td>
-      <td class="c-titre" data-label="Titre">${titreSurligne(ticket.titre, motsTapes)}${htmlAssigne(ticket)}${htmlMentionImport(ticket)}</td>
+      <td class="c-titre" data-label="Titre">${titreSurligne(ticket.titre, motsTapes)}${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlMentionImport(ticket)}</td>
       <td data-label="Type">${htmlType(ticket)}</td>
       <td data-label="Priorité">${htmlPriorite(ticket)}</td>
       <td data-label="Points">${htmlPoints(ticket)}</td>
@@ -1909,7 +2035,7 @@
         : `<span>${echapper(colonne.titre)}</span>${ICONE_DROITE}`}</button>`);
     return `<li class="kb-carte" data-id="${ticket.id}" draggable="true">
       <div class="kb-carte-haut"><button type="button" class="kb-poignee" data-poignee-kanban="${ticket.id}" title="Glisser pour déplacer ce ticket" aria-label="Déplacer le ticket #${ticket.id}" aria-describedby="aide-deplacer-kanban">${ICONE_POIGNEE}</button><span class="kb-id">#${ticket.id}</span>${htmlType(ticket)}<button type="button" class="kb-modifier" data-modifier="${ticket.id}" aria-label="Modifier le ticket #${ticket.id}" title="Modifier ce ticket">${ICONE_CRAYON}</button></div>
-      <p class="kb-carte-titre">${titreSurligne(ticket.titre, motsTapes)}</p>${htmlAssigne(ticket)}${htmlMentionImport(ticket)}
+      <p class="kb-carte-titre">${titreSurligne(ticket.titre, motsTapes)}</p>${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlMentionImport(ticket)}
       <div class="kb-carte-meta">${htmlPriorite(ticket)}${htmlPoints(ticket)}</div>
       ${indicationR2}
       <div class="kb-actions">${fleche(colonnePrecedente, 'gauche')}${fleche(colonneSuivante, 'droite')}</div>
@@ -2147,7 +2273,7 @@
     page.aideStatut.textContent = [`Un ticket non estimé reste dans le «\u00a0${COLONNE_BACKLOG.titre}\u00a0»`, ...limites, ...passages].join(' ; ') + '.';
   }
 
-  const CHAMPS_AVEC_ERREUR = ['titre', 'type', 'priorite', 'points', 'statut', 'assigne'];
+  const CHAMPS_AVEC_ERREUR = ['titre', 'type', 'priorite', 'points', 'statut', 'assigne', 'bloquePar'];
   let titreDejaSaisi = false;   // on n’affiche l’erreur du titre qu’après une première saisie ou un envoi
 
   function afficherErreur(champ, message) {
@@ -2196,6 +2322,7 @@
       cocher('points', clePoints(ticketAModifier.points));
       page.champStatut.value = ticketAModifier.statut;
       trouver('#f-assigne').value = ticketAModifier.assigne || '';
+      trouver('#f-bloque').value = (ticketAModifier.bloquePar || []).join(', ');
     }
     const note = enModification ? noteImportDe(ticketAModifier.id) : null;
     page.blocNoteFormulaire.hidden = !note;
@@ -2217,7 +2344,8 @@
       priorite: priorite === null ? null : Number(priorite),
       points: points === NON_ESTIME ? null : points === null ? undefined : Number(points),   // « 4 » reste 4 : refusé par validerTicket
       statut: donnees.get('statut'),
-      assigne: String(donnees.get('assigne') ?? '').trim() || null
+      assigne: String(donnees.get('assigne') ?? '').trim() || null,
+      bloquePar: lireNumerosDeBloquants(donnees.get('bloquePar'))    // null si le texte n’est pas une liste de numéros
     };
   }
 
@@ -2341,7 +2469,9 @@
     const ticket = projetActif().tickets.find(element => element.id === Number(bouton.dataset.suppr));
     if (!ticket) return;
     idASupprimer = ticket.id;
-    page.texteSuppression.innerHTML = `Le ticket <strong>#${ticket.id} «\u00a0${echapper(ticket.titre)}\u00a0»</strong> sera retiré définitivement du backlog. Cette action est irréversible.`;
+    const debloques = projetActif().tickets.filter(element => Array.isArray(element.bloquePar) && element.bloquePar.includes(ticket.id));
+    page.texteSuppression.innerHTML = `Le ticket <strong>#${ticket.id} «\u00a0${echapper(ticket.titre)}\u00a0»</strong> sera retiré définitivement du backlog. Cette action est irréversible.`
+      + (debloques.length ? ` ${debloques.length > 1 ? `Les tickets ${debloques.map(element => `#${element.id}`).join(', ')} ne seront plus bloqués par lui.` : `Le ticket #${debloques[0].id} ne sera plus bloqué par lui.`}` : '');
     ouvrirFenetre(page.fenetreSuppression, bouton);
   });
   page.boutonConfirmerSuppression.addEventListener('click', () => {
@@ -3744,7 +3874,7 @@
     const mentions = [
       estTermine(ticket) ? '<span class="sprint-mention is-termine">Terminé</span>' : `<span class="sprint-mention">${echapper(libelleDe(STATUTS, ticket.statut))}</span>`,
       ticket.points === null ? '<span class="sprint-mention is-alerte">non estimé</span>' : '',
-      autreSprint ? `<span class="sprint-mention is-info">dans « ${echapper(autreSprint.nom)} »</span>` : ''
+      autreSprint ? `<span class="sprint-mention is-info">dans «\u00a0${echapper(autreSprint.nom)}\u00a0»</span>` : ''
     ].join('');
     const bouton = !modifiable ? ''
       : dansLeSprint
@@ -3819,7 +3949,7 @@
   function mettreDansLeSprint(id) {
     const projet = projetActif();
     const sprint = sprintAffiche(projet);
-    if (sprint) appliquerAuSprint(ajouterAuSprint(projet.tickets, projet.sprints, id, sprint.id), `Ticket #${id} mis dans le sprint « ${sprint.nom} ».`);
+    if (sprint) appliquerAuSprint(ajouterAuSprint(projet.tickets, projet.sprints, id, sprint.id), `Ticket #${id} mis dans le sprint «\u00a0${sprint.nom}\u00a0».`);
   }
   function sortirDuSprint(id) {
     const projet = projetActif();
@@ -3890,7 +4020,7 @@
   function afficherDureeSprint() {
     const { debut, fin } = lireFormulaireSprint();
     const valide = dateIsoValide(debut) && dateIsoValide(fin) && fin >= debut;
-    sprintsUI.duree.textContent = valide ? `Durée : ${pluriel(nombreDeJours(debut, fin), 'jour')} (${SPRINT_JOURS_MAX} au maximum).` : `De 1 à ${SPRINT_JOURS_MAX} jours, bornes incluses.`;
+    sprintsUI.duree.textContent = valide ? `Durée\u00a0: ${pluriel(nombreDeJours(debut, fin), 'jour')} (${SPRINT_JOURS_MAX} au maximum).` : `De 1 à ${SPRINT_JOURS_MAX} jours, bornes incluses.`;
   }
   sprintsUI.boutonNouveau.addEventListener('click', () => {
     const projet = projetActif();
@@ -3925,7 +4055,7 @@
     etat.sprintAfficheId = resultat.sprint.id;
     fermerFenetre(sprintsUI.fenetre, sprintsUI.choix);
     rendre();
-    notifier(`Sprint « ${resultat.sprint.nom} » créé (${resultat.sprint.capacite} points). Glissez-y des tickets estimés.`);
+    notifier(`Sprint «\u00a0${resultat.sprint.nom}\u00a0» créé (${resultat.sprint.capacite} points). Glissez-y des tickets estimés.`);
   });
 
   // Fenêtre « Clôturer le sprint »
@@ -3935,9 +4065,9 @@
     if (!sprint || sprint.statut !== SPRINT_OUVERT) return;
     const aRendre = projet.tickets.filter(ticket => ticket.sprintId === sprint.id && !estTermine(ticket));
     const termines = projet.tickets.filter(ticket => ticket.sprintId === sprint.id && estTermine(ticket));
-    sprintsUI.texteCloture.innerHTML = `<p>${pluriel(termines.length, 'ticket')} terminé${termines.length > 1 ? 's' : ''} ${termines.length > 1 ? 'restent' : 'reste'} dans le bilan du sprint « ${echapper(sprint.nom)} ».</p>`
+    sprintsUI.texteCloture.innerHTML = `<p>${pluriel(termines.length, 'ticket')} terminé${termines.length > 1 ? 's' : ''} ${termines.length > 1 ? 'restent' : 'reste'} dans le bilan du sprint «\u00a0${echapper(sprint.nom)}\u00a0».</p>`
       + (aRendre.length
-        ? `<p><strong>${pluriel(aRendre.length, 'ticket')} non terminé${aRendre.length > 1 ? 's' : ''} ${aRendre.length > 1 ? 'reviennent' : 'revient'} dans la colonne « ${echapper(COLONNE_BACKLOG.titre)} », hors sprint :</strong></p><ul class="sprint-cloture-liste">${aRendre.map(ticket => `<li>#${ticket.id} ${echapper(ticket.titre)}</li>`).join('')}</ul>`
+        ? `<p><strong>${pluriel(aRendre.length, 'ticket')} non terminé${aRendre.length > 1 ? 's' : ''} ${aRendre.length > 1 ? 'reviennent' : 'revient'} dans la colonne «\u00a0${echapper(COLONNE_BACKLOG.titre)}\u00a0», hors sprint\u00a0:</strong></p><ul class="sprint-cloture-liste">${aRendre.map(ticket => `<li>#${ticket.id} ${echapper(ticket.titre)}</li>`).join('')}</ul>`
         : '<p>Tous les tickets du sprint sont terminés.</p>')
       + '<p>Un sprint clôturé ne peut plus être modifié.</p>';
     ouvrirFenetre(sprintsUI.fenetreCloture, sprintsUI.boutonCloturer);
@@ -3952,7 +4082,7 @@
     projet.tickets = resultat.tickets;
     projet.sprints = resultat.sprints;
     rendre();
-    notifier(`Sprint « ${sprint.nom} » clôturé${resultat.retournes.length ? ` : ${pluriel(resultat.retournes.length, 'ticket')} ${resultat.retournes.length > 1 ? 'retournent' : 'retourne'} au backlog` : ''}.`);
+    notifier(`Sprint «\u00a0${sprint.nom}\u00a0» clôturé${resultat.retournes.length ? `\u00a0: ${pluriel(resultat.retournes.length, 'ticket')} ${resultat.retournes.length > 1 ? 'retournent' : 'retourne'} au backlog` : ''}.`);
   });
 
 
@@ -4177,14 +4307,16 @@
       // existe, et s’il est estimé quand le sprint est ouvert. Correspondance par numéro : un ticket
       // renuméroté (numéro en double) n’a pas de correspondance sûr, il redevient hors sprint.
       const sprints = lireSprints(projetBrut.sprints);
-      const sprintsBrutsParNumero = new Map();
-      for (const ligne of lignes) if (!sprintsBrutsParNumero.has(String(ligne.valeurs.id))) sprintsBrutsParNumero.set(String(ligne.valeurs.id), ligne.valeurs.sprintId);
-      const tickets = rapport.importes.map(ticket => {
-        const sprintId = sprintsBrutsParNumero.get(String(ticket.id));
+      // B2.7d · Bloquants : même correspondance par numéro, puis nettoyage (inconnus, doublons, cycles)
+      const brutsParNumero = new Map();
+      for (const ligne of lignes) if (!brutsParNumero.has(String(ligne.valeurs.id))) brutsParNumero.set(String(ligne.valeurs.id), ligne.valeurs);
+      const tickets = nettoyerBloquants(rapport.importes.map(ticket => {
+        const brut = brutsParNumero.get(String(ticket.id)) || {};
+        const sprintId = brut.sprintId;
         const sprint = Number.isInteger(sprintId) ? sprints.find(element => element.id === sprintId) : null;
         const garde = sprint && !(sprint.statut === SPRINT_OUVERT && ticket.points === null);
-        return garde ? { ...ticket, sprintId } : ticket;
-      });
+        return { ...ticket, sprintId: garde ? sprintId : null, bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [] };
+      }));
       projets.push({ id, nom, tickets, ordreManuel, notesImport, journal, sprints });
     });
     if (!projets.length) throw new Error('aucun projet lisible');
@@ -4247,8 +4379,17 @@
     };
   }
 
+  // Migration v4 → v5 (B2) : aucun ticket n’est bloqué ; les sprints sont gardés tels quels
+  function migrerV4versV5(brut) {
+    return {
+      ...brut,
+      version: 5,
+      tickets: Array.isArray(brut.tickets) ? brut.tickets.map(ticket => (ticket && typeof ticket === 'object' ? { ...ticket, bloquePar: [] } : ticket)) : brut.tickets
+    };
+  }
+
   // charger([texte]) → { origine, donnees, ... } ; ne lève JAMAIS d’exception.
-  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'illisible' | 'version-inconnue'
+  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'migration-v4' | 'illisible' | 'version-inconnue'
   //   donnees : l’état à appliquer, ou null (→ démonstration)
   //   Sans argument, lit la sauvegarde de ce navigateur.
   function charger(texte) {
@@ -4260,16 +4401,20 @@
       const brut = JSON.parse(texte);
       if (!brut) return { origine: 'premier-lancement', donnees: null };
       if (Array.isArray(brut)) {
-        const lu = lireEnveloppeV2(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut))));
+        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut)))));
         return { origine: 'migration-v1', donnees: lu.donnees, nombre: brut.length };
       }
       if (typeof brut === 'object' && brut.version === 2) {
-        const lu = lireEnveloppeV2(migrerV3versV4(migrerV2versV3(brut)));
+        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(migrerV2versV3(brut))));
         return { origine: 'migration-v2', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 3) {
-        const lu = lireEnveloppeV2(migrerV3versV4(brut));
+        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(brut)));
         return { origine: 'migration-v3', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
+      }
+      if (typeof brut === 'object' && brut.version === 4) {
+        const lu = lireEnveloppeV2(migrerV4versV5(brut));
+        return { origine: 'migration-v4', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === VERSION_SAUVEGARDE) {
         const lu = lireEnveloppeV2(brut);
@@ -4352,7 +4497,8 @@
       'illisible': ['La sauvegarde de ce navigateur était illisible.', 'TaskFlow a redémarré avec la démonstration. Une copie de la donnée abîmée a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'version-inconnue': [`La sauvegarde vient d’une version plus récente de TaskFlow (version ${chargement.version}).`, 'Cette version ne sait pas la lire : TaskFlow a démarré avec la démonstration. Une copie a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'migration-v2': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, avec un nouveau champ «\u00a0Assigné à\u00a0», vide pour l’instant.`],
-      'migration-v3': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour : ${pluriel(chargement.nombre || 0, 'ticket')} repris. Vous pouvez maintenant planifier des sprints.`],
+      'migration-v4': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, sprints compris. Vous pouvez maintenant indiquer qu’un ticket est «\u00a0bloqué par\u00a0» d’autres.`],
+      'migration-v3': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris. Vous pouvez maintenant planifier des sprints.`],
       'migration-v1': ['Votre sauvegarde venait d’une ancienne version de TaskFlow.', `Elle a été convertie au nouveau format\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, les champs manquants complétés par leur valeur par défaut.`]
     };
     if (chargement.origine === 'sauvegarde' && chargement.corrections) {
@@ -4430,6 +4576,8 @@
     modifierTicket, ticketsEnCsv, ticketsEnJson, analyserFichier,
     // B1 · Sprints et burndown (JS 5b)
     nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
+    // B2 · Dépendances et blocages (JS 5c)
+    definirBloquants, bloquantsActifs, retirerDesBloquants,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX

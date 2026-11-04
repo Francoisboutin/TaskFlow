@@ -652,6 +652,9 @@ mark { background: var(--surlignage); color: inherit; border-radius: 3px; paddin
 .assigne { display: flex; align-items: center; gap: 5px; width: fit-content; margin-top: 4px; font-size: .82rem; font-weight: 700; color: var(--encre-2); }
 .assigne svg { width: 13px; height: 13px; flex: none; }
 .assigne.is-moi { color: var(--bleu); }
+/* B2 · Badge 🔒 : le ticket attend des tickets non terminés (ses bloquants actifs) */
+.bloque { display: flex; align-items: center; gap: 5px; width: fit-content; margin-top: 4px; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--ambre-pale); color: var(--ambre); font-size: .8rem; font-weight: 700; cursor: help; }
+.bloque svg { width: 13px; height: 13px; flex: none; }
 .kb-carte .assigne { margin-top: -4px; }
 .mes-tickets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .mes-tickets label { font-size: .9rem; color: var(--encre-2); }
