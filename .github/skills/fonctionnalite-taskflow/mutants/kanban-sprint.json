@@ -1,0 +1,10 @@
+[
+ ["B5.1", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut <= aujourdhui);", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut < aujourdhui);"],
+ ["B5.1", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut <= aujourdhui);", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.debut <= aujourdhui);"],
+ ["B5.1", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut <= aujourdhui);", "const sprintsEnCours = (sprints, aujourdhui) => listeDeSprints(sprints).filter(sprint => sprint.statut === SPRINT_OUVERT && sprint.debut <= aujourdhui && aujourdhui <= sprint.fin);"],
+ ["B5.2", "const affiches = liste.filter(ticket => ticket && numeros.has(ticket.sprintId));", "const affiches = liste.filter(ticket => ticket && numeros.has(ticket.sprintId) && !estTermine(ticket));"],
+ ["B5.2", "const affiches = liste.filter(ticket => ticket && numeros.has(ticket.sprintId));", "const affiches = liste.filter(ticket => ticket && ticket.sprintId !== null);"],
+ ["B5.2", "return { sprints: enCours, tickets: affiches, horsSprint: liste.length - affiches.length };", "return { sprints: enCours, tickets: affiches, horsSprint: 0 };"],
+ ["B5.3", "if (!enCours.length) return { sprints: [], tickets: liste.slice(), horsSprint: 0 };", ""],
+ ["B5.4", "const numeros = new Set(enCours.map(sprint => sprint.id));\n    const affiches", "const numeros = new Set(enCours.slice(0, 1).map(sprint => sprint.id));\n    const affiches"]
+]
