@@ -495,3 +495,88 @@ Tous les auto-tests restent verts ; les sauvegardes d'hier (v3, v4, v5) se recha
 
 - **B1.8** (« Section Sprints sous les vues ») est remplacé par **B4.1** et **B4.4**.
 - **Vue** : `vue` peut valoir `'sprints'`.
+
+---
+
+## B5 · Le Kanban affiche le sprint en cours
+
+- **Sujet** : `kanban-sprint`
+- **Demande** : « Quand un sprint est démarré, fais en sorte que le Kanban affiche uniquement les tickets du sprint en cours. Les autres sont affichés uniquement dans le backlog. »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+Pendant un sprint, le tableau Kanban sert à suivre l'engagement de l'équipe : les tickets qui n'en font pas partie l'encombrent. Ils restent visibles, mais dans le Backlog.
+
+### Définitions
+
+- Un **sprint en cours** (« démarré ») est un sprint **ouvert** dont la date de début est passée ou est aujourd'hui (`debut ≤ aujourd'hui`). Il reste en cours après sa date de fin tant qu'il n'est pas clôturé. Un sprint qui n'a pas commencé ou qui est clôturé n'est pas en cours.
+- La date du jour est reçue en paramètre (`aujourdhui`), comme pour B3 : rien ne lit l'horloge.
+
+### Critères d'acceptation (8)
+
+#### B5.1 · Quels sprints sont en cours — `sprintsEnCours(sprints, aujourdhui)`
+
+Aujourd'hui = 2026-11-04.
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | sprint ouvert du 2026-11-02 au 2026-11-13 | en cours |
+| b | sprint ouvert qui commence aujourd'hui (2026-11-04) | en cours |
+| c | sprint ouvert qui commence demain | pas en cours |
+| d | sprint ouvert dont la fin est passée (2026-10-20 → 2026-10-31), pas encore clôturé | en cours |
+| e | sprint clôturé | pas en cours |
+| f | plusieurs sprints en cours | tous, dans l'ordre de la liste reçue ; aucun → `[]` |
+
+#### B5.2 · Les tickets du Kanban pendant un sprint — `ticketsDuKanban(tickets, sprints, aujourdhui)`
+
+Renvoie `{ sprints, tickets, horsSprint }` : les sprints en cours, les tickets à afficher (dans l'ordre reçu) et le nombre de tickets laissés au Backlog.
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | un sprint en cours avec #3 (À faire), #4 (En cours) et #5 (Terminé) ; #1, #2 hors sprint | `tickets` = #3, #4, #5 (tous les tickets du sprint, **terminés compris**) ; `horsSprint` = 2 |
+| b | un ticket dont le `sprintId` désigne un sprint **clôturé** | il n'est pas affiché (il n'est pas dans le sprint en cours) |
+| c | — | le tableau reçu n'est pas modifié |
+
+#### B5.3 · Sans sprint en cours, le Kanban affiche tout, comme avant
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | aucun sprint, ou seulement des sprints pas commencés, ou clôturés | `tickets` = tous les tickets reçus ; `sprints` = `[]` ; `horsSprint` = 0 |
+
+#### B5.4 · Plusieurs sprints en cours
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | deux sprints en cours (A et B) | le Kanban affiche les tickets de A **et** de B |
+
+#### B5.5 · La date du jour décide
+
+| Cas | Étant donné | Alors |
+|---|---|---|
+| a | le même projet, vu la veille du début du sprint | tous les tickets |
+| b | vu le jour du début | seulement ceux du sprint |
+
+#### B5.6 · Ce que montre le Kanban (interface)
+
+- Au-dessus des colonnes, un **bandeau** : « Sprint en cours : « Sprint 14 » (du 4 au 17 nov.) · 3 tickets. Les 9 autres tickets sont dans le Backlog. » avec un bouton **« Voir le Backlog »** ; pas de bandeau sans sprint en cours.
+- La **limite WIP** porte toujours sur tous les tickets du projet (règle R1 inchangée) : si des tickets hors sprint occupent la colonne limitée, l'indicateur le dit (« WIP 3/3 · dont 1 hors sprint »).
+- La recherche et les filtres s'appliquent en plus, comme avant.
+
+#### B5.7 · Un ticket ajouté ou modifié hors du sprint n'est pas annoncé « masqué par vos filtres »
+
+En vue Kanban, pendant un sprint, un ticket ajouté (ou modifié) qui n'est pas dans le sprint en cours est annoncé : « Ticket #13 ajouté au backlog. Il n'est pas dans le sprint en cours : retrouvez-le dans la vue Backlog. »
+
+#### B5.8 · Les autres vues et les données ne changent pas
+
+- **Backlog** (liste) : tous les tickets, comme avant. **Sprints** : la liste « Tickets disponibles » est inchangée. **Calendrier** : toutes les échéances. Compteurs et graphiques : inchangés.
+- Aucune nouvelle donnée : la sauvegarde reste en version 6 ; la sauvegarde d'hier (v6) est reprise telle quelle.
+
+### Hors périmètre
+
+- Un bouton pour afficher tout le projet dans le Kanban pendant un sprint.
+- Changer la règle WIP pour ne compter que le sprint.
+
+### Impacts sur l'existant
+
+- Aucun sur les règles R1 à R6 ni sur la sauvegarde. Le Kanban sans sprint en cours est identique à avant.
