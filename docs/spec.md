@@ -144,7 +144,7 @@ L'application note le relevé du jour de chaque sprint ouvert du projet affiché
 
 #### B1.8 · Interface (vérifiée à la main)
 
-Section **« Sprints »** sous les vues : choix du sprint, **« + Nouveau sprint »** (erreurs de B1.1 sous chaque champ, durée affichée) ; **jauge de capacité** (barre plafonnée à 100 %, états « pile » et « dépassée » distincts) ; listes « Dans le sprint » / « Tickets disponibles » avec **glisser-déposer** et boutons équivalents au clavier ; refus expliqués par une notification ; **« Clôturer le sprint »** avec confirmation listant les tickets qui retournent au backlog ; **burndown SVG** (idéal en pointillés, restants, légende). Réinitialiser le projet supprime ses sprints ; un nouveau projet n'en a aucun.
+*(Disposition remplacée par B4.1 et B4.4 : Sprints est désormais une vue.)* Section **« Sprints »** : choix du sprint, **« + Nouveau sprint »** (erreurs de B1.1 sous chaque champ, durée affichée) ; **jauge de capacité** (barre plafonnée à 100 %, états « pile » et « dépassée » distincts) ; listes « Dans le sprint » / « Tickets disponibles » avec **glisser-déposer** et boutons équivalents au clavier ; refus expliqués par une notification ; **« Clôturer le sprint »** avec confirmation listant les tickets qui retournent au backlog ; **burndown SVG** (idéal en pointillés, restants, légende). Réinitialiser le projet supprime ses sprints ; un nouveau projet n'en a aucun.
 
 #### Correspondance avec la 1re version de cette spec (12 critères, relue et réduite à 8)
 
@@ -420,3 +420,78 @@ Navigation : « Mois précédent / suivant » passe de `AAAA-MM` à `AAAA-MM` (`
 - **Sauvegarde** : version 5 → 6 (`VERSION_SAUVEGARDE = 6`) ; une sauvegarde v5 devient une migration (`migration-v5`).
 - **Vue** : `vue` peut valoir `'calendrier'` (sauvegardée et rechargée comme `'backlog'` et `'kanban'`).
 - **Filtres** : nouveau groupe `urgences` (vide par défaut).
+
+---
+
+## B4 · Disposition de l'écran
+
+- **Sujet** : `disposition`
+- **Demande** : « Fais en sorte que ce soit mieux disposé : là on a Sprints sous le Backlog ou sous le Kanban, c'est illogique. Réfléchis à toute la disposition de l'ensemble des données, puis mets à jour. Tu peux aussi élargir l'écran pour avoir plus de place où mettre les données, boutons… »
+- **Date** : 2026-11-04
+
+### Pourquoi
+
+La planification des sprints est une activité à part entière : elle n'a pas sa place sous la liste ou sous le tableau Kanban. Et sur un grand écran, la page n'utilisait que 1 200 px de large : tout était empilé (filtres, tri, tableau, sprints, déplacements…), les filtres repoussaient le travail loin vers le bas.
+
+### Disposition retenue
+
+```
+En-tête : marque · projet · nouveau projet · thème
+Titre du projet · compteurs · graphiques (repliables)
+[ Backlog | Sprints | Kanban | Calendrier ]  · résumé des retards
+Recherche · + Ajouter · Importer · Exporter (pour toutes les vues) · rapport d'import
+┌ colonne latérale ─────────────┬ vue active ─────────────────────────────┐
+│ Filtres (repliables)          │ Backlog : tri + tableau                 │
+│ Derniers déplacements         │ Sprints : jauge | burndown, puis listes │
+│                               │ Kanban · Calendrier                     │
+└───────────────────────────────┴─────────────────────────────────────────┘
+Vos données · Auto-tests
+```
+
+### Critères d'acceptation (6)
+
+#### B4.1 · Sprints devient une vue, au même titre que les autres
+
+| Cas | Alors |
+|---|---|
+| a | 4 onglets, dans l'ordre du travail : **Backlog, Sprints, Kanban, Calendrier** (`data-vue` : `backlog`, `sprints`, `kanban`, `calendrier`) |
+| b | le contenu « Sprints » est un panneau d'onglet (`#vue-sprints`, `role="tabpanel"`), masqué quand une autre vue est choisie ; il n'existe plus de section Sprints hors des vues |
+| c | la vue `'sprints'` est sauvegardée et relue comme les autres ; une vue inconnue redevient `'backlog'` |
+| d | au clavier, ← → Début Fin parcourent les 4 onglets |
+
+#### B4.2 · L'écran est mieux utilisé
+
+| Cas | Alors |
+|---|---|
+| a | le contenu s'élargit jusqu'à **1 600 px** (au lieu de 1 200 px) |
+| b | sur un écran d'au moins 1 180 px : les **filtres** et les **derniers déplacements** forment une colonne latérale à gauche, la **vue active** occupe le reste |
+| c | sur un écran plus étroit : tout s'empile dans l'ordre filtres, vue, déplacements ; rien ne déborde horizontalement (sauf le Kanban, qui défile dans son propre cadre comme avant) |
+
+#### B4.3 · La barre d'actions sert toutes les vues
+
+Recherche, « + Ajouter un ticket », « Importer », « Exporter » et le rapport d'import sont au-dessus de l'espace de travail, visibles dans les 4 vues.
+
+#### B4.4 · Vue Sprints organisée
+
+| Cas | Alors |
+|---|---|
+| a | en haut : choix du sprint et « + Nouveau sprint » ; puis, côte à côte sur grand écran, les informations du sprint (dates, jauge, « Clôturer ») et le **burndown** ; puis les deux listes côte à côte |
+| b | la recherche et les filtres s'appliquent aux « Tickets disponibles » (les tickets « Dans le sprint » restent tous affichés) |
+
+#### B4.5 · Les tickets ajoutés ou modifiés dans la vue Sprints ne sont pas annoncés « masqués par les filtres » à tort
+
+Comme pour le Calendrier : un ticket qui passe les filtres n'est jamais annoncé masqué, même s'il n'apparaît dans aucune liste du sprint affiché.
+
+#### B4.6 · Aucune régression
+
+Tous les auto-tests restent verts ; les sauvegardes d'hier (v3, v4, v5) se rechargent sans erreur ; la vue choisie (y compris `'sprints'`) est retrouvée au rechargement.
+
+### Hors périmètre
+
+- Choix de l'ordre ou de la largeur des colonnes par l'utilisateur.
+- Nouvelle présentation des graphiques et des compteurs (seule leur largeur change).
+
+### Impacts sur l'existant
+
+- **B1.8** (« Section Sprints sous les vues ») est remplacé par **B4.1** et **B4.4**.
+- **Vue** : `vue` peut valoir `'sprints'`.
