@@ -45,6 +45,7 @@
                rapport d’import et filtres
        HTML 5  Vue Backlog : tri et tableau des tickets
        HTML 6  Vue Kanban (colonnes générées par le JS à partir de COLONNES)
+       HTML 6b Sprints et burndown (B1) · HTML 6c Vue Calendrier (B3)
        HTML 7  Vos données (sauvegarde automatique, réinitialisations), puis panneau Auto-tests
        HTML 8  Fenêtres : ajouter ou modifier un ticket, supprimer, créer un projet, importer, exporter,
                réinitialiser le projet, réinitialiser la démo, corrections faites à l’import
@@ -189,11 +190,16 @@
         <button type="button" class="vue-onglet" role="tab" id="onglet-kanban" data-vue="kanban" aria-controls="vue-kanban" aria-selected="false" tabindex="-1">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="3" width="4" height="14" rx="1.2" stroke="currentColor" stroke-width="1.8"/><rect x="8" y="3" width="4" height="10" rx="1.2" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="3" width="4" height="7" rx="1.2" stroke="currentColor" stroke-width="1.8"/></svg>Kanban
         </button>
+        <button type="button" class="vue-onglet" role="tab" id="onglet-calendrier" data-vue="calendrier" aria-controls="vue-calendrier" aria-selected="false" tabindex="-1">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12.5" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 8.5h14M7 2.5v4M13 2.5v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Calendrier
+        </button>
       </div>
     </div>
 
     <!-- Une phrase qui explique la vue choisie et ses mots (WIP, Definition of Ready) -->
     <p class="vue-aide" id="vue-aide"></p>
+    <!-- B3 · Résumé des retards par colonne (masqué s’il n’y en a pas) -->
+    <p class="retards" id="retards" role="status" hidden></p>
 
     <!-- ====================== HTML 4 · RECHERCHE ET FILTRES (communs aux deux vues) ====================== -->
     <section aria-label="Recherche et filtres">
@@ -245,6 +251,7 @@
             <fieldset class="filtre"><legend>Priorité</legend><div class="chips" data-groupe="priorites"></div></fieldset>
             <fieldset class="filtre"><legend>Points de complexité</legend><div class="chips" data-groupe="points"></div></fieldset>
             <fieldset class="filtre"><legend>Statut</legend><div class="chips" data-groupe="statuts"></div></fieldset>
+            <fieldset class="filtre"><legend>Urgence</legend><div class="chips" data-groupe="urgences"></div></fieldset>
             <div class="filtre">
               <label for="filtre-id">N° de ticket</label>
               <input id="filtre-id" class="input input-court" type="number" min="1" step="1" inputmode="numeric" placeholder="ex.&nbsp;: 12">
@@ -328,6 +335,19 @@
       <p id="aide-deplacer-kanban" class="sr-only">Glissez la carte vers une autre colonne. Au clavier : flèches gauche et droite pour changer de colonne, haut et bas pour changer de place.</p>
       <!-- Une colonne par entrée de COLONNES (voir JS 1) -->
       <div class="kanban" id="kanban"></div>
+    </section>
+
+    <!-- ====================== HTML 6c · VUE CALENDRIER (B3) ====================== -->
+    <section id="vue-calendrier" role="tabpanel" aria-labelledby="onglet-calendrier" hidden>
+      <div class="cal-tete">
+        <button type="button" class="btn btn-secondary btn-petit" id="btn-mois-precedent" aria-label="Mois précédent">◀</button>
+        <h2 class="cal-titre" id="cal-titre" aria-live="polite"></h2>
+        <button type="button" class="btn btn-secondary btn-petit" id="btn-mois-suivant" aria-label="Mois suivant">▶</button>
+        <button type="button" class="btn btn-texte" id="btn-mois-courant">Aujourd’hui</button>
+        <p class="cal-resume" id="cal-resume"></p>
+      </div>
+      <!-- Rempli par le JS (JS 17c) à partir de grilleDuMois() : une ligne par semaine, du lundi au dimanche -->
+      <table class="calendrier" id="calendrier" aria-labelledby="cal-titre"></table>
     </section>
 
     <!-- ====================== HTML 6b · SPRINTS ET BURNDOWN (B1) ====================== -->
@@ -495,6 +515,13 @@
         <input id="f-bloque" name="bloquePar" class="input" type="text" inputmode="numeric" autocomplete="off" placeholder="ex.&nbsp;: 3, 5" aria-describedby="f-bloque-aide err-bloquePar">
         <div class="champ-pied"><span id="f-bloque-aide">Numéros des tickets à terminer avant de commencer celui-ci, séparés par des virgules. Tant qu’ils ne sont pas terminés, il ne peut pas entrer «&nbsp;En cours&nbsp;».</span></div>
         <p class="erreur" id="err-bloquePar" hidden></p>
+      </div>
+      <!-- echeance : facultatif (v6, B3) -->
+      <div class="champ">
+        <label for="f-echeance">Échéance <span class="oblig">(facultatif)</span></label>
+        <input id="f-echeance" name="echeance" class="input input-court" type="date" aria-describedby="f-echeance-aide err-echeance">
+        <div class="champ-pied"><span id="f-echeance-aide">Date à laquelle le ticket doit être terminé. Badges «&nbsp;En retard&nbsp;» et «&nbsp;J-2&nbsp;» dans la liste et le Kanban.</span></div>
+        <p class="erreur" id="err-echeance" hidden></p>
       </div>
       <!-- En modification, si le ticket a été corrigé à l’import : rappel et confirmation -->
       <div class="note-form" id="f-note" hidden>

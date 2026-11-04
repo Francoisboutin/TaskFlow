@@ -19,6 +19,7 @@
      CSS 13  Glisser-déposer dans la liste
      CSS 14  Vue Kanban
      CSS 14b Sprints : jauge de capacité, listes à glisser, burndown (B1)
+     CSS 14c Échéances : badges, résumé des retards, vue Calendrier (B3)
      CSS 15  Guide, message de démarrage, « Vos données » et panneau Auto-tests
      CSS 16  Fenêtres et formulaires (dont les cartes de planning poker)
      CSS 17  Notification
@@ -936,6 +937,43 @@ tr.emplacement td { padding: 6px 10px; border-bottom: 1px solid var(--trait); }
 .bd-point { fill: var(--surface); stroke: var(--bleu); stroke-width: 2.5; }
 @media (max-width: 720px) {
   .sprint-listes { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ==========================================================================
+   CSS 14c · ÉCHÉANCES : BADGES, RÉSUMÉ DES RETARDS, VUE CALENDRIER (B3)
+   Rouge = en retard ; ambre = aujourd’hui, J-1, J-2 ; discret sinon.
+   ========================================================================== */
+.echeance { display: flex; align-items: center; gap: 5px; width: fit-content; margin-top: 4px; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--gris-pale); color: var(--encre-2); font-size: .8rem; font-weight: 700; }
+.echeance svg { width: 13px; height: 13px; flex: none; }
+.echeance.is-retard { background: var(--rouge-pale); color: var(--rouge); }
+.echeance.is-proche { background: var(--ambre-pale); color: var(--ambre); }
+.echeance.is-terminee { background: none; padding-left: 0; color: var(--encre-3); font-weight: 400; }
+.retards { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: fit-content; margin: 10px auto 0; padding: 7px 14px; border-radius: 999px; background: var(--rouge-pale); color: var(--rouge); font-size: .92rem; }
+.retards svg { width: 16px; height: 16px; }
+.retards .btn-texte { height: auto; margin-left: 4px; padding: 0; }
+.kb-retard { padding: 0 7px; border-radius: 999px; background: var(--rouge-pale); color: var(--rouge); font-size: .76rem; font-weight: 700; }
+.cal-tete { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 18px 0 10px; }
+.cal-titre { min-width: 9.5em; margin: 0; font-family: var(--police-titres); font-size: 1.35rem; font-weight: 700; text-align: center; text-transform: capitalize; }
+.cal-resume { flex: 1 1 100%; margin: 0; color: var(--encre-3); font-size: .88rem; }
+.calendrier { width: 100%; border-collapse: separate; border-spacing: 4px; table-layout: fixed; }
+.calendrier th { padding: 4px; color: var(--encre-3); font-size: .82rem; font-weight: 700; text-align: left; }
+.cal-jour { height: 96px; padding: 6px; border: 1px solid var(--trait); border-radius: 10px; background: var(--surface); vertical-align: top; }
+.cal-jour.is-hors-mois { background: var(--surface-2); color: var(--encre-3); }
+.cal-jour.is-aujourdhui { border: 2px solid var(--bleu); }
+.cal-num { display: block; font-size: .86rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-jour.is-aujourdhui .cal-num { color: var(--bleu); }
+.cal-tickets { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; margin: 4px 0 0; padding: 0; list-style: none; }   /* minmax(0) : un titre long est coupé (…), il ne déborde pas de la case */
+.cal-tickets li { min-width: 0; }
+.cal-ticket { display: block; width: 100%; overflow: hidden; padding: 2px 6px; border: 1px solid var(--trait-2); border-radius: 6px; background: var(--surface); color: var(--encre); font: inherit; font-size: .78rem; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cal-ticket:hover { border-color: var(--bleu); }
+.cal-ticket.is-retard { border-color: var(--rouge); background: var(--rouge-pale); color: var(--rouge); }
+.cal-ticket.is-proche { border-color: var(--ambre); background: var(--ambre-pale); color: var(--ambre); }
+.cal-ticket.is-terminee { color: var(--encre-3); text-decoration: line-through; }
+.cal-ticket.is-new { outline: 3px solid var(--bleu); }
+@media (max-width: 720px) {
+  .calendrier { border-spacing: 2px; }
+  .cal-jour { height: 72px; padding: 3px; }
+  .cal-ticket { padding: 1px 3px; font-size: .7rem; }
 }
 
 /* ==========================================================================

@@ -15,6 +15,7 @@
      JS 5   Import et export : fonctions pures (CSV, JSON)
      JS 5b  Sprints et burndown : fonctions pures (B1)
      JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2)
+     JS 5d  Échéances et calendrier : fonctions pures (B3)
    ── Zone 3 · UI
      JS 6   État de l’application et actions sur les données
      JS 7   Recherche tolérante : casse, accents, fautes de frappe
@@ -29,7 +30,8 @@
      JS 16  Kanban : boutons ◀ ▶, glisser-déposer et bouton Modifier
      JS 17  Import et export : fenêtres et téléchargement
      JS 17b Sprints : panneau, jauge, glisser-déposer, clôture, burndown SVG (B1)
-     JS 18  Onglets Backlog / Kanban
+     JS 17c Échéances : badges, résumé des retards, vue Calendrier (B3)
+     JS 18  Onglets Backlog / Kanban / Calendrier
      JS 19  Panneaux repliables
      JS 20  Thème clair / sombre
      JS 21  (Auto-tests : déplacés dans tests.js)
@@ -106,7 +108,7 @@
   // Sauvegarde des données (JS 22) : une enveloppe versionnée, sous une seule clé
   const CLE_SAUVEGARDE = 'taskflow';
   const CLE_SAUVEGARDE_ILLISIBLE = 'taskflow-illisible';   // copie d’une sauvegarde abîmée, gardée à part
-  const VERSION_SAUVEGARDE = 5;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints, ticket.sprintId ; v5 : ticket.bloquePar
+  const VERSION_SAUVEGARDE = 6;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints, ticket.sprintId ; v5 : ticket.bloquePar ; v6 : ticket.echeance
 
   // Les 12 tickets du projet de démonstration « Refonte de l’espace client »
   const TICKETS_INITIAUX = [
@@ -161,7 +163,15 @@
     return FORMAT_DATE.format(new Date(annee, mois - 1, jour));
   }
   // Date du jour en heure locale (toISOString donnerait la date en heure UTC)
+  // B3 · La date du jour peut être imposée par l’adresse (index.html?aujourdhui=AAAA-MM-JJ) pour tester l’interface.
+  // Les règles (zone 2) ne l’appellent jamais : elles reçoivent « aujourdhui » en paramètre.
+  let aujourdhuiImpose;
   function aujourdhuiIso() {
+    if (aujourdhuiImpose === undefined) {
+      try { const valeur = new URLSearchParams(window.location.search).get('aujourdhui'); aujourdhuiImpose = dateIsoValide(valeur) ? valeur : null; }
+      catch (erreur) { aujourdhuiImpose = null; }
+    }
+    if (aujourdhuiImpose) return aujourdhuiImpose;
     const maintenant = new Date();
     const surDeuxChiffres = nombre => String(nombre).padStart(2, '0');
     return `${maintenant.getFullYear()}-${surDeuxChiffres(maintenant.getMonth() + 1)}-${surDeuxChiffres(maintenant.getDate())}`;
@@ -221,6 +231,7 @@
     if (!Array.isArray(ticket.bloquePar) || ticket.bloquePar.some(numero => !Number.isInteger(numero) || numero < 1 || numero === ticket.id) || new Set(ticket.bloquePar).size !== ticket.bloquePar.length) {
       erreurs.bloquePar = 'Les bloquants doivent être des numéros d’autres tickets, sans doublon.';
     }
+    if (!(ticket.echeance === null || dateIsoValide(ticket.echeance))) erreurs.echeance = 'L’échéance doit être une date au format AAAA-MM-JJ, ou vide.';
     return erreurs;
   }
 
@@ -239,7 +250,9 @@
       // v4 (B1) : numéro du sprint du ticket, ou null (hors sprint)
       sprintId: Number.isInteger(donnees.sprintId) && donnees.sprintId >= 1 ? donnees.sprintId : null,
       // v5 (B2) : numéros des tickets qu’il attend, sans doublon
-      bloquePar: Array.isArray(donnees.bloquePar) ? [...new Set(donnees.bloquePar.filter(numero => Number.isInteger(numero) && numero >= 1))] : []
+      bloquePar: Array.isArray(donnees.bloquePar) ? [...new Set(donnees.bloquePar.filter(numero => Number.isInteger(numero) && numero >= 1))] : [],
+      // v6 (B3) : date d’échéance « AAAA-MM-JJ », ou null
+      echeance: typeof donnees.echeance === 'string' && donnees.echeance.trim() ? donnees.echeance.trim() : null
     };
   }
 
@@ -1156,6 +1169,95 @@
     return morceaux.every(morceau => /^\d{1,6}$/.test(morceau)) ? morceaux.map(Number) : null;
   }
 
+  /* ========================================================================
+     JS 5d · ÉCHÉANCES ET CALENDRIER — FONCTIONS PURES (B3, docs/spec.md)
+     ticket.echeance : « AAAA-MM-JJ » ou null.
+     Pièges couverts :
+     – la date du jour est TOUJOURS reçue en paramètre (aujourdhui) : rien ne lit l’horloge ;
+     – les mois s’écrivent « AAAA-MM » de 01 à 12 : l’indice 0–11 de Date ne sort jamais d’ici ;
+     – « 31 janvier + 1 mois » = 28 (ou 29) février : le jour est ramené au dernier jour du mois ;
+     – les jours sont comptés en UTC (pas de jour de 23 h ou 25 h au changement d’heure).
+     ======================================================================== */
+  const URGENCES = ['retard', 'proche', 'sans'];               // valeurs du filtre « Urgence »
+  const LIBELLES_URGENCE = { retard: 'En retard', proche: 'Bientôt (J-2)', sans: 'Sans échéance' };
+  const JOURS_PROCHES = 2;                                      // « J-2 » : de 0 à 2 jours
+
+  // B3.2 · urgence(ticket, aujourdhui) → { niveau, jours, libelle }
+  function urgence(ticket, aujourdhui) {
+    if (!ticket || !dateIsoValide(ticket.echeance)) return { niveau: 'aucune', jours: null, libelle: '' };
+    const jours = nombreDeJours(aujourdhui, ticket.echeance) - 1;  // 0 le jour même, négatif si passée
+    if (estTermine(ticket)) return { niveau: 'terminee', jours, libelle: '' };
+    if (jours < 0) return { niveau: 'retard', jours, libelle: 'En retard' };
+    if (jours === 0) return { niveau: 'aujourdhui', jours, libelle: 'Aujourd’hui' };
+    if (jours <= JOURS_PROCHES) return { niveau: 'proche', jours, libelle: `J-${jours}` };
+    return { niveau: 'plus-tard', jours, libelle: '' };
+  }
+
+  // B3.3 · Filtre « Urgence » : un ticket passe s’il correspond à l’une des valeurs choisies (aucune = tous)
+  function correspondAUrgence(ticket, urgences, aujourdhui) {
+    if (!urgences || !urgences.size) return true;
+    const { niveau } = urgence(ticket, aujourdhui);
+    return (urgences.has('retard') && niveau === 'retard')
+      || (urgences.has('proche') && (niveau === 'aujourdhui' || niveau === 'proche'))
+      || (urgences.has('sans') && niveau === 'aucune');
+  }
+
+  // B3.3 · Tri par échéance : sans échéance toujours en dernier, quel que soit le sens
+  function comparerEcheances(ticketA, ticketB, sens = 1) {
+    const a = dateIsoValide(ticketA.echeance) ? ticketA.echeance : null;
+    const b = dateIsoValide(ticketB.echeance) ? ticketB.echeance : null;
+    if (a === b) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return (a < b ? -1 : 1) * sens;
+  }
+
+  // B3.4 · ajouterMois('2026-01-31', 1) → '2026-02-28' : le jour est ramené au dernier jour du mois d’arrivée
+  const joursDansLeMois = (annee, mois) => new Date(Date.UTC(annee, mois, 0)).getUTCDate();   // mois de 1 à 12
+  function ajouterMois(dateIso, nombre) {
+    const [annee, mois, jour] = dateIso.split('-').map(Number);
+    const rang = annee * 12 + (mois - 1) + nombre;             // mois comptés depuis l’an 0, de 0 à 11 seulement ici
+    const anneeArrivee = Math.floor(rang / 12);
+    const moisArrivee = rang - anneeArrivee * 12 + 1;          // retour de 0–11 à 1–12
+    const jourArrivee = Math.min(jour, joursDansLeMois(anneeArrivee, moisArrivee));
+    return `${String(anneeArrivee).padStart(4, '0')}-${String(moisArrivee).padStart(2, '0')}-${String(jourArrivee).padStart(2, '0')}`;
+  }
+  const moisValide = mois => typeof mois === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(mois);
+  const moisDe = dateIso => dateIso.slice(0, 7);                // « 2026-11-04 » → « 2026-11 »
+  const ajouterAuMois = (mois, nombre) => moisDe(ajouterMois(`${mois}-01`, nombre));
+
+  // B3.5 · grilleDuMois('2026-11', tickets) → { mois, semaines: [[{ date, dansLeMois, tickets }, … 7], …] } ou null
+  // Semaines du lundi au dimanche ; la grille déborde sur les mois voisins pour être complète.
+  function grilleDuMois(mois, tickets) {
+    if (!moisValide(mois)) return null;
+    const premier = `${mois}-01`;
+    const [annee, numero] = mois.split('-').map(Number);
+    const dernier = `${mois}-${String(joursDansLeMois(annee, numero)).padStart(2, '0')}`;
+    const jourDeLaSemaine = dateIso => (new Date(jourUtc(dateIso)).getUTCDay() + 6) % 7;   // lundi 0 … dimanche 6
+    const debut = datePlusJours(premier, -jourDeLaSemaine(premier));
+    const fin = datePlusJours(dernier, 6 - jourDeLaSemaine(dernier));
+    const parDate = new Map();
+    for (const ticket of Array.isArray(tickets) ? tickets : []) {
+      if (!ticket || !dateIsoValide(ticket.echeance)) continue;
+      if (!parDate.has(ticket.echeance)) parDate.set(ticket.echeance, []);
+      parDate.get(ticket.echeance).push(ticket.id);
+    }
+    const semaines = [];
+    for (let date = debut; date <= fin; date = datePlusJours(date, 1)) {
+      if (jourDeLaSemaine(date) === 0) semaines.push([]);
+      semaines[semaines.length - 1].push({ date, dansLeMois: date.startsWith(`${mois}-`), tickets: parDate.get(date) || [] });
+    }
+    return { mois, semaines };
+  }
+
+  // B3.6 · resumeDesRetards(tickets, aujourdhui) → { total, colonnes: [{ id, titre, nombre }] } (toutes sauf « Terminé »)
+  function resumeDesRetards(tickets, aujourdhui) {
+    const liste = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
+    const colonnes = COLONNES.slice(0, -1).map(colonne => ({ id: colonne.id, titre: colonne.titre,
+      nombre: liste.filter(ticket => ticket.statut === colonne.id && urgence(ticket, aujourdhui).niveau === 'retard').length }));
+    return { total: colonnes.reduce((total, colonne) => total + colonne.nombre, 0), colonnes };
+  }
+
   /* ########################################################################
      ZONE 3 · UI (état de l’application, page, actions de l’utilisateur, sauvegarde)
      ######################################################################## */
@@ -1168,7 +1270,8 @@
   const filtresVides = () => ({
     texte: '', numero: '', du: '', au: '',
     types: new Set(), priorites: new Set(), points: new Set(), statuts: new Set(),
-    mesTickets: false              // seulement les tickets assignés à la personne indiquée dans « Je suis »
+    mesTickets: false,             // seulement les tickets assignés à la personne indiquée dans « Je suis »
+    urgences: new Set()            // B3 : 'retard', 'proche' (J-2), 'sans' (sans échéance)
   });
 
   // Tri par défaut : priorité (haute en premier), puis points (1 → 13, non estimés en bas)
@@ -1184,7 +1287,8 @@
     tri: triParDefaut(),           // critères de tri dans l’ordre d’importance : [{ critere, sens }]
     vue: 'backlog',                // vue affichée : 'backlog' (liste) ou 'kanban'
     utilisateur: '',               // « Je suis » : sert au filtre « Mes tickets »
-    sprintAfficheId: null          // B1 : sprint affiché dans la section « Sprints » (non sauvegardé)
+    sprintAfficheId: null,         // B1 : sprint affiché dans la section « Sprints » (non sauvegardé)
+    moisAffiche: null              // B3 : mois de la vue Calendrier « AAAA-MM » (null = mois du jour ; non sauvegardé)
   };
 
   const projetActif = () => etat.projets.find(projet => projet.id === etat.projetActifId);
@@ -1421,6 +1525,7 @@
   function filtrer(tickets, motsTapes) {
     const filtres = etat.filtres;
     const numeroCherche = filtres.numero === '' ? null : Number(filtres.numero);
+    const aujourdhui = aujourdhuiIso();
     return tickets.filter(ticket =>
       correspondARecherche(ticket, motsTapes) &&
       (numeroCherche === null || ticket.id === numeroCherche) &&
@@ -1430,7 +1535,8 @@
       (!filtres.statuts.size || filtres.statuts.has(ticket.statut)) &&
       (!filtres.du || ticket.creeLe >= filtres.du) &&
       (!filtres.au || ticket.creeLe <= filtres.au) &&
-      (!filtres.mesTickets || (!!etat.utilisateur && normaliser(ticket.assigne || '') === normaliser(etat.utilisateur)))
+      (!filtres.mesTickets || (!!etat.utilisateur && normaliser(ticket.assigne || '') === normaliser(etat.utilisateur))) &&
+      correspondAUrgence(ticket, filtres.urgences, aujourdhui)
     );
   }
 
@@ -1440,7 +1546,7 @@
     return [
       motsTapes.length > 0, filtres.numero !== '',
       filtres.types.size > 0, filtres.priorites.size > 0, filtres.points.size > 0, filtres.statuts.size > 0,
-      filtres.du !== '' || filtres.au !== '', filtres.mesTickets
+      filtres.du !== '' || filtres.au !== '', filtres.mesTickets, filtres.urgences.size > 0
     ].filter(Boolean).length;
   }
 
@@ -1463,7 +1569,8 @@
     type:     { nom: 'Type', phrase: 'type', asc: 'Story, Bug puis Tâche', desc: 'Tâche, Bug puis Story', comparer: (a, b) => rangDans(TYPES, a.type) - rangDans(TYPES, b.type) },
     statut:   { nom: 'Statut', phrase: 'statut', asc: 'de Backlog à Terminé', desc: 'de Terminé à Backlog', comparer: (a, b) => rangDans(STATUTS, a.statut) - rangDans(STATUTS, b.statut) },
     creeLe:   { nom: 'Date de création', phrase: 'date de création', asc: 'du plus ancien au plus récent', desc: 'du plus récent au plus ancien', comparer: comparerDates },
-    id:       { nom: 'N° de ticket', phrase: 'numéro', asc: 'du plus petit au plus grand', desc: 'du plus grand au plus petit', comparer: (a, b) => a.id - b.id }
+    id:       { nom: 'N° de ticket', phrase: 'numéro', asc: 'du plus petit au plus grand', desc: 'du plus grand au plus petit', comparer: (a, b) => a.id - b.id },
+    echeance: { nom: 'Échéance', phrase: 'échéance', asc: 'la plus proche en premier', desc: 'la plus lointaine en premier', comparer: null }   // B3 : comparerEcheances
   };
 
   // Compare deux tickets critère par critère ; le numéro départage les égalités restantes
@@ -1473,7 +1580,9 @@
         const signe = sens === 'desc' ? -1 : 1;
         const ecart = critere === 'points'
           ? comparerPoints(ticketA, ticketB, signe)
-          : CRITERES_TRI[critere].comparer(ticketA, ticketB) * signe;
+          : critere === 'echeance'
+            ? comparerEcheances(ticketA, ticketB, signe)        // sans échéance toujours en dernier
+            : CRITERES_TRI[critere].comparer(ticketA, ticketB) * signe;
         if (ecart) return ecart;
       }
       return ticketA.id - ticketB.id;
@@ -1958,6 +2067,7 @@
       morceaux.push(`points\u00a0: ${points.map(valeur => (valeur === NON_ESTIME ? 'non estimé' : valeur)).join(', ')}`);
     }
     if (filtres.statuts.size) morceaux.push(`statut\u00a0: ${libellesChoisis(STATUTS, filtres.statuts)}`);
+    if (filtres.urgences.size) morceaux.push(`urgence\u00a0: ${URGENCES.filter(valeur => filtres.urgences.has(valeur)).map(valeur => LIBELLES_URGENCE[valeur]).join(', ')}`);
     if (filtres.numero !== '') morceaux.push(`n°\u00a0${filtres.numero}`);
     if (filtres.mesTickets) morceaux.push(`mes tickets (${etat.utilisateur})`);
     if (filtres.du || filtres.au) morceaux.push(`créés${filtres.du ? ` à partir du ${dateEnFrancais(filtres.du)}` : ''}${filtres.au ? ` jusqu’au ${dateEnFrancais(filtres.au)}` : ''}`);
@@ -1970,7 +2080,7 @@
   function htmlLigne(ticket, motsTapes) {
     return `<tr data-id="${ticket.id}">
       <td class="c-id" data-label="N°"><button type="button" class="poignee" data-poignee="${ticket.id}" title="Glisser pour déplacer ce ticket" aria-label="Déplacer le ticket #${ticket.id}" aria-describedby="aide-deplacer">${ICONE_POIGNEE}</button>#${ticket.id}</td>
-      <td class="c-titre" data-label="Titre">${titreSurligne(ticket.titre, motsTapes)}${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlMentionImport(ticket)}</td>
+      <td class="c-titre" data-label="Titre">${titreSurligne(ticket.titre, motsTapes)}${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlEcheance(ticket)}${htmlMentionImport(ticket)}</td>
       <td data-label="Type">${htmlType(ticket)}</td>
       <td data-label="Priorité">${htmlPriorite(ticket)}</td>
       <td data-label="Points">${htmlPoints(ticket)}</td>
@@ -2035,7 +2145,7 @@
         : `<span>${echapper(colonne.titre)}</span>${ICONE_DROITE}`}</button>`);
     return `<li class="kb-carte" data-id="${ticket.id}" draggable="true">
       <div class="kb-carte-haut"><button type="button" class="kb-poignee" data-poignee-kanban="${ticket.id}" title="Glisser pour déplacer ce ticket" aria-label="Déplacer le ticket #${ticket.id}" aria-describedby="aide-deplacer-kanban">${ICONE_POIGNEE}</button><span class="kb-id">#${ticket.id}</span>${htmlType(ticket)}<button type="button" class="kb-modifier" data-modifier="${ticket.id}" aria-label="Modifier le ticket #${ticket.id}" title="Modifier ce ticket">${ICONE_CRAYON}</button></div>
-      <p class="kb-carte-titre">${titreSurligne(ticket.titre, motsTapes)}</p>${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlMentionImport(ticket)}
+      <p class="kb-carte-titre">${titreSurligne(ticket.titre, motsTapes)}</p>${htmlAssigne(ticket)}${htmlBloquants(ticket)}${htmlEcheance(ticket)}${htmlMentionImport(ticket)}
       <div class="kb-carte-meta">${htmlPriorite(ticket)}${htmlPoints(ticket)}</div>
       ${indicationR2}
       <div class="kb-actions">${fleche(colonnePrecedente, 'gauche')}${fleche(colonneSuivante, 'droite')}</div>
@@ -2066,7 +2176,7 @@
             <span class="kb-compte" title="${pluriel(cartes.length, 'ticket')}">${cartes.length}<span class="sr-only"> ticket${cartes.length > 1 ? 's' : ''}</span></span>
             ${htmlPointsDeColonne(statsAffichees.colonnes[rang])}
           </span>
-          <div class="kb-infos"><span>${statsAffichees.colonnes[rang].pourcentage}\u00a0% des tickets</span>${indicateurWip}</div>
+          <div class="kb-infos"><span>${statsAffichees.colonnes[rang].pourcentage}\u00a0% des tickets</span>${indicateurWip}${htmlRetardsDeColonne(cartes)}</div>
         </header>
         ${cartes.length
           ? `<ol class="kb-cartes" aria-label="Tickets «\u00a0${echapper(colonne.titre)}\u00a0»">${cartes.map(ticket => htmlCarteKanban(ticket, COLONNES[rang - 1], COLONNES[rang + 1], motsTapes)).join('')}</ol>`
@@ -2113,6 +2223,7 @@
     const projet = projetActif();
     rendreJournal(projet);
     rendreSprints(projet);
+    rendreRetards(projet);
     const tousLesTickets = projet.tickets;
     const { motsTapes, visibles } = ticketsAffiches(projet);
     const filtresActifs = nombreDeFiltresActifs(motsTapes);
@@ -2172,14 +2283,25 @@
     // Seule la vue visible est reconstruite ; l’autre le sera quand on l’affichera (JS 18)
     if (etat.vue === 'kanban') {
       rendreKanban(visibles, motsTapes, statsDuProjet, statsAffichees);
+    } else if (etat.vue === 'calendrier') {
+      rendreCalendrier(visibles);
     } else {
       rendreEnTetes(ordreManuelActif);
       rendreTableau(visibles, motsTapes, tousLesTickets.length);
     }
   }
 
+  // Élément qui contient les tickets de la vue affichée (Backlog, Kanban ou Calendrier)
+  const conteneurDeLaVue = () => (etat.vue === 'kanban' ? page.kanban : etat.vue === 'calendrier' ? calendrierUI.grille : page.liste);
+
   // Met en valeur un ticket qui vient d’être ajouté ; renvoie false s’il est masqué par les filtres
   function surlignerTicket(id) {
+    // Vue calendrier : un ticket affiché peut n’avoir aucune case (pas d’échéance, autre mois) sans être masqué par les filtres
+    if (etat.vue === 'calendrier') {
+      const bouton = calendrierUI.grille.querySelector(`[data-modifier="${id}"]`);
+      if (bouton) { bouton.classList.add('is-new'); setTimeout(() => bouton.classList.remove('is-new'), 2800); }
+      return idsAffiches.includes(id);
+    }
     const element = etat.vue === 'kanban'
       ? page.kanban.querySelector(`.kb-carte[data-id="${id}"]`)
       : (page.tableau.hidden ? null : page.liste.querySelector(`tr[data-id="${id}"]`));
@@ -2273,7 +2395,7 @@
     page.aideStatut.textContent = [`Un ticket non estimé reste dans le «\u00a0${COLONNE_BACKLOG.titre}\u00a0»`, ...limites, ...passages].join(' ; ') + '.';
   }
 
-  const CHAMPS_AVEC_ERREUR = ['titre', 'type', 'priorite', 'points', 'statut', 'assigne', 'bloquePar'];
+  const CHAMPS_AVEC_ERREUR = ['titre', 'type', 'priorite', 'points', 'statut', 'assigne', 'bloquePar', 'echeance'];
   let titreDejaSaisi = false;   // on n’affiche l’erreur du titre qu’après une première saisie ou un envoi
 
   function afficherErreur(champ, message) {
@@ -2323,6 +2445,7 @@
       page.champStatut.value = ticketAModifier.statut;
       trouver('#f-assigne').value = ticketAModifier.assigne || '';
       trouver('#f-bloque').value = (ticketAModifier.bloquePar || []).join(', ');
+      trouver('#f-echeance').value = ticketAModifier.echeance || '';
     }
     const note = enModification ? noteImportDe(ticketAModifier.id) : null;
     page.blocNoteFormulaire.hidden = !note;
@@ -2345,7 +2468,8 @@
       points: points === NON_ESTIME ? null : points === null ? undefined : Number(points),   // « 4 » reste 4 : refusé par validerTicket
       statut: donnees.get('statut'),
       assigne: String(donnees.get('assigne') ?? '').trim() || null,
-      bloquePar: lireNumerosDeBloquants(donnees.get('bloquePar'))    // null si le texte n’est pas une liste de numéros
+      bloquePar: lireNumerosDeBloquants(donnees.get('bloquePar')),   // null si le texte n’est pas une liste de numéros
+      echeance: String(donnees.get('echeance') ?? '').trim() || null
     };
   }
 
@@ -2400,7 +2524,7 @@
     ticketEnModification = null;
     if (inchange) { notifier('Aucune modification à enregistrer.'); return; }
     const message = notePriseEnCompte ? `Ticket #${ticket.id} modifié, corrections de l’import prises en compte.` : `Ticket #${ticket.id} modifié.`;
-    const conteneur = etat.vue === 'kanban' ? page.kanban : page.liste;
+    const conteneur = conteneurDeLaVue();
     if (surlignerTicket(ticket.id)) {
       const bouton = conteneur.querySelector(`[data-modifier="${ticket.id}"]`);
       if (bouton) bouton.focus({ preventScroll: true });
@@ -2437,9 +2561,9 @@
   }
   page.boutonNoteOk.addEventListener('click', () => {
     const id = idDeLaNoteOuverte;
-    fermerFenetre(page.fenetreNote, etat.vue === 'kanban' ? page.kanban : page.liste);
+    fermerFenetre(page.fenetreNote, conteneurDeLaVue());
     if (id !== null) prendreEnCompte(id);
-    const bouton = (etat.vue === 'kanban' ? page.kanban : page.liste).querySelector(`[data-modifier="${id}"]`);
+    const bouton = (conteneurDeLaVue()).querySelector(`[data-modifier="${id}"]`);
     if (bouton) bouton.focus({ preventScroll: true });
   });
   page.boutonNoteModifier.addEventListener('click', () => {
@@ -2543,7 +2667,8 @@
       types: TYPES.map(type => ({ valeur: type.valeur, html: ICONES_TYPE[type.valeur] + type.libelle })),
       priorites: PRIORITES.map(priorite => ({ valeur: String(priorite.valeur), html: `${priorite.libelle} (${priorite.valeur})` })),
       points: [...POINTS.map(points => ({ valeur: String(points), html: String(points) })), { valeur: NON_ESTIME, html: 'Non estimé' }],
-      statuts: STATUTS.map(statut => ({ valeur: statut.valeur, html: statut.libelle }))
+      statuts: STATUTS.map(statut => ({ valeur: statut.valeur, html: statut.libelle })),
+      urgences: URGENCES.map(valeur => ({ valeur, html: LIBELLES_URGENCE[valeur] }))   // B3
     };
     for (const conteneur of trouverTous('.chips[data-groupe]')) {
       const groupe = conteneur.dataset.groupe;
@@ -4087,19 +4212,113 @@
 
 
   /* ========================================================================
-     JS 18 · ONGLETS BACKLOG / KANBAN
+     JS 17c · ÉCHÉANCES : BADGES, RÉSUMÉ DES RETARDS, VUE CALENDRIER (B3)
+     La date du jour vient d’aujourdhuiIso() : elle peut être imposée par
+     l’adresse (index.html?aujourdhui=2026-02-27) pour tester l’interface.
      ======================================================================== */
+  const calendrierUI = {
+    vue: trouver('#vue-calendrier'),
+    titre: trouver('#cal-titre'),
+    grille: trouver('#calendrier'),
+    resume: trouver('#cal-resume'),
+    precedent: trouver('#btn-mois-precedent'),
+    suivant: trouver('#btn-mois-suivant'),
+    courant: trouver('#btn-mois-courant'),
+    retards: trouver('#retards')
+  };
+  const FORMAT_MOIS = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const FORMAT_JOUR_COURT = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const titreDuMois = mois => FORMAT_MOIS.format(new Date(jourUtc(`${mois}-01`)));
+  const dateCourte = dateIso => FORMAT_JOUR_COURT.format(new Date(jourUtc(dateIso)));
+  const ICONE_ECHEANCE = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 6.6h11M5.5 2v3M10.5 2v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  const CLASSES_URGENCE = { retard: 'is-retard', aujourdhui: 'is-proche', proche: 'is-proche', 'plus-tard': '', terminee: 'is-terminee', aucune: '' };
+
+  // Badge d’échéance (liste et Kanban) : « En retard », « Aujourd’hui », « J-1 », « J-2 », sinon la date
+  function htmlEcheance(ticket) {
+    if (!dateIsoValide(ticket.echeance)) return '';
+    const { niveau, jours, libelle } = urgence(ticket, aujourdhuiIso());
+    const texte = niveau === 'retard' ? `En retard · ${pluriel(-jours, 'jour')}` : libelle || dateCourte(ticket.echeance);
+    return `<span class="echeance ${CLASSES_URGENCE[niveau]}" title="Échéance\u00a0: ${echapper(dateEnFrancais(ticket.echeance))}${niveau === 'terminee' ? ' (ticket terminé)' : ''}">${ICONE_ECHEANCE}${echapper(texte)}</span>`;
+  }
+
+  // Résumé des retards, au-dessus des vues (tous les tickets du projet, filtres ou non)
+  function rendreRetards(projet) {
+    const { total, colonnes } = resumeDesRetards(projet.tickets, aujourdhuiIso());
+    calendrierUI.retards.hidden = !total;
+    if (!total) return;
+    remplacerContenu(calendrierUI.retards, `${ICONE_ALERTE}<strong>${pluriel(total, 'ticket')} en retard</strong>\u00a0: `
+      + colonnes.filter(colonne => colonne.nombre).map(colonne => `${echapper(colonne.titre)} ${colonne.nombre}`).join(' · ')
+      + ' <button type="button" class="btn btn-texte" id="btn-voir-retards">Les afficher</button>');
+  }
+  calendrierUI.retards.addEventListener('click', evenement => {
+    if (!evenement.target.closest('#btn-voir-retards')) return;
+    etat.filtres = { ...filtresVides(), urgences: new Set(['retard']) };
+    synchroniserChamps();
+    rendre();
+  });
+
+  // Nombre de retards d’une colonne du Kanban (parmi les cartes affichées)
+  function htmlRetardsDeColonne(cartes) {
+    const aujourdhui = aujourdhuiIso();
+    const nombre = cartes.filter(ticket => urgence(ticket, aujourdhui).niveau === 'retard').length;
+    return nombre ? `<span class="kb-retard">${nombre} en retard</span>` : '';
+  }
+
+  // Vue calendrier : les tickets affichés (recherche et filtres compris) dans la case de leur échéance
+  function rendreCalendrier(visibles) {
+    const aujourdhui = aujourdhuiIso();
+    const mois = moisValide(etat.moisAffiche) ? etat.moisAffiche : moisDe(aujourdhui);
+    const grille = grilleDuMois(mois, visibles);
+    const parNumero = new Map(visibles.map(ticket => [ticket.id, ticket]));
+    calendrierUI.titre.textContent = titreDuMois(mois);
+    calendrierUI.courant.disabled = mois === moisDe(aujourdhui);
+    const dansLeMois = visibles.filter(ticket => dateIsoValide(ticket.echeance) && ticket.echeance.startsWith(`${mois}-`)).length;
+    const sansEcheance = visibles.filter(ticket => !dateIsoValide(ticket.echeance)).length;
+    calendrierUI.resume.textContent = `${pluriel(dansLeMois, 'échéance')} ce mois-ci${sansEcheance ? ` · ${pluriel(sansEcheance, 'ticket')} affiché${sansEcheance > 1 ? 's' : ''} sans échéance` : ''}.`;
+    const JOURS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    remplacerContenu(calendrierUI.grille, `<thead><tr>${JOURS.map(jour => `<th scope="col">${jour}</th>`).join('')}</tr></thead><tbody>`
+      + grille.semaines.map(semaine => `<tr>${semaine.map(jour => {
+        const classes = ['cal-jour', jour.dansLeMois ? '' : 'is-hors-mois', jour.date === aujourdhui ? 'is-aujourdhui' : ''].filter(Boolean).join(' ');
+        const tickets = jour.tickets.map(id => {
+          const ticket = parNumero.get(id);
+          const { niveau, libelle } = urgence(ticket, aujourdhui);
+          return `<li><button type="button" class="cal-ticket ${CLASSES_URGENCE[niveau]}" data-modifier="${id}" title="Modifier #${id} «\u00a0${echapper(ticket.titre)}\u00a0»${libelle ? ` (${libelle})` : ''}">#${id} ${echapper(ticket.titre)}</button></li>`;
+        }).join('');
+        return `<td class="${classes}"${jour.date === aujourdhui ? ' aria-current="date"' : ''}><span class="cal-num"><span class="sr-only">${echapper(dateEnFrancais(jour.date))}</span><span aria-hidden="true">${Number(jour.date.slice(8))}</span></span>${tickets ? `<ul class="cal-tickets">${tickets}</ul>` : ''}</td>`;
+      }).join('')}</tr>`).join('') + '</tbody>');
+  }
+  const changerDeMois = nombre => {
+    const mois = moisValide(etat.moisAffiche) ? etat.moisAffiche : moisDe(aujourdhuiIso());
+    etat.moisAffiche = ajouterAuMois(mois, nombre);
+    rendre();
+  };
+  calendrierUI.precedent.addEventListener('click', () => changerDeMois(-1));
+  calendrierUI.suivant.addEventListener('click', () => changerDeMois(1));
+  calendrierUI.courant.addEventListener('click', () => { etat.moisAffiche = null; rendre(); });
+  calendrierUI.grille.addEventListener('click', evenement => {
+    const bouton = evenement.target.closest('[data-modifier]');
+    if (bouton) ouvrirModificationDepuis(bouton);
+  });
+
+
+  /* ========================================================================
+     JS 18 · ONGLETS BACKLOG / KANBAN / CALENDRIER
+     ======================================================================== */
+  const VUES = ['backlog', 'kanban', 'calendrier'];
   function afficherVue(vue) {
-    etat.vue = vue === 'kanban' ? 'kanban' : 'backlog';
+    etat.vue = VUES.includes(vue) ? vue : 'backlog';
     page.vueBacklog.hidden = etat.vue !== 'backlog';
     page.vueKanban.hidden = etat.vue !== 'kanban';
+    calendrierUI.vue.hidden = etat.vue !== 'calendrier';
     for (const onglet of page.onglets) {
       const actif = onglet.dataset.vue === etat.vue;
       onglet.setAttribute('aria-selected', actif ? 'true' : 'false');
       onglet.tabIndex = actif ? 0 : -1;               // seul l’onglet actif est atteint avec Tab
     }
     enregistrerPreference(CLE_VUE, etat.vue);
-    trouver('#vue-aide').textContent = etat.vue === 'kanban'
+    trouver('#vue-aide').textContent = etat.vue === 'calendrier'
+      ? 'Les échéances du mois, du lundi au dimanche. Cliquez sur un ticket pour le modifier ; la recherche et les filtres s’appliquent aussi ici.'
+      : etat.vue === 'kanban'
       ? `Une colonne par étape. Glissez une carte (ou utilisez ◀ ▶) pour la faire avancer. Limites WIP\u00a0: ${COLONNES.filter(colonne => colonne.wip !== null).map(colonne => `«\u00a0${colonne.titre}\u00a0» ${colonne.wip} tickets`).join(', ')}. ${COLONNES.filter(colonne => colonne.depuis).map(colonne => `On n’entre dans «\u00a0${colonne.titre}\u00a0» que depuis ${originesAdmises(colonne)}`).join('. ')}, et un ticket non estimé reste dans le «\u00a0${COLONNE_BACKLOG.titre}\u00a0» (Definition of Ready).`
       : 'Tous les tickets en liste. Cliquez sur un en-tête pour trier, combinez les filtres, ou glissez une ligne par sa poignée ⠿ pour changer l’ordre.';
     rendre();                                         // la vue affichée est mise à jour
@@ -4213,7 +4432,7 @@
         tri: source.tri.map(critere => ({ critere: critere.critere, sens: critere.sens })),
         filtres: {
           texte: filtres.texte, numero: filtres.numero, du: filtres.du, au: filtres.au, mesTickets: !!filtres.mesTickets,
-          types: [...filtres.types], priorites: [...filtres.priorites], points: [...filtres.points], statuts: [...filtres.statuts]
+          types: [...filtres.types], priorites: [...filtres.priorites], points: [...filtres.points], statuts: [...filtres.statuts], urgences: [...filtres.urgences]
         }
       }
     };
@@ -4224,7 +4443,8 @@
     types: TYPES.map(element => element.valeur),
     priorites: PRIORITES.map(element => String(element.valeur)),
     points: [...POINTS.map(String), NON_ESTIME],
-    statuts: STATUTS.map(element => element.valeur)
+    statuts: STATUTS.map(element => element.valeur),
+    urgences: URGENCES                // B3
   };
   function filtresDepuis(brut) {
     const filtres = filtresVides();
@@ -4315,7 +4535,7 @@
         const sprintId = brut.sprintId;
         const sprint = Number.isInteger(sprintId) ? sprints.find(element => element.id === sprintId) : null;
         const garde = sprint && !(sprint.statut === SPRINT_OUVERT && ticket.points === null);
-        return { ...ticket, sprintId: garde ? sprintId : null, bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [] };
+        return { ...ticket, sprintId: garde ? sprintId : null, bloquePar: Array.isArray(brut.bloquePar) ? brut.bloquePar : [], echeance: dateIsoValide(brut.echeance) ? brut.echeance : null };
       }));
       projets.push({ id, nom, tickets, ordreManuel, notesImport, journal, sprints });
     });
@@ -4331,7 +4551,7 @@
         prochainIdTicket: prochainId,                 // les numéros déjà attribués sont sautés (numerosAttribues)
         prochainIdProjet: Math.max(Number.isInteger(compteurs.prochainProjet) ? compteurs.prochainProjet : 0, Math.max(...idsProjets) + 1),
         numerosAttribues: [...attribues],
-        vue: affichage.vue === 'kanban' ? 'kanban' : 'backlog',
+        vue: ['kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',
         tri: triDepuis(affichage.tri),
         filtres: filtresDepuis(affichage.filtres),
         utilisateur: typeof affichage.utilisateur === 'string' ? affichage.utilisateur.trim().replace(/\s+/g, ' ').slice(0, ASSIGNE_MAX) : ''
@@ -4388,8 +4608,17 @@
     };
   }
 
+  // Migration v5 → v6 (B3) : aucun ticket n’a d’échéance ; sprints et bloquants sont gardés tels quels
+  function migrerV5versV6(brut) {
+    return {
+      ...brut,
+      version: 6,
+      tickets: Array.isArray(brut.tickets) ? brut.tickets.map(ticket => (ticket && typeof ticket === 'object' ? { ...ticket, echeance: null } : ticket)) : brut.tickets
+    };
+  }
+
   // charger([texte]) → { origine, donnees, ... } ; ne lève JAMAIS d’exception.
-  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'migration-v4' | 'illisible' | 'version-inconnue'
+  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'migration-v4' | 'migration-v5' | 'illisible' | 'version-inconnue'
   //   donnees : l’état à appliquer, ou null (→ démonstration)
   //   Sans argument, lit la sauvegarde de ce navigateur.
   function charger(texte) {
@@ -4401,20 +4630,24 @@
       const brut = JSON.parse(texte);
       if (!brut) return { origine: 'premier-lancement', donnees: null };
       if (Array.isArray(brut)) {
-        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut)))));
+        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut))))));
         return { origine: 'migration-v1', donnees: lu.donnees, nombre: brut.length };
       }
       if (typeof brut === 'object' && brut.version === 2) {
-        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(migrerV2versV3(brut))));
+        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(brut)))));
         return { origine: 'migration-v2', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 3) {
-        const lu = lireEnveloppeV2(migrerV4versV5(migrerV3versV4(brut)));
+        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(brut))));
         return { origine: 'migration-v3', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 4) {
-        const lu = lireEnveloppeV2(migrerV4versV5(brut));
+        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(brut)));
         return { origine: 'migration-v4', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
+      }
+      if (typeof brut === 'object' && brut.version === 5) {
+        const lu = lireEnveloppeV2(migrerV5versV6(brut));
+        return { origine: 'migration-v5', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === VERSION_SAUVEGARDE) {
         const lu = lireEnveloppeV2(brut);
@@ -4497,6 +4730,7 @@
       'illisible': ['La sauvegarde de ce navigateur était illisible.', 'TaskFlow a redémarré avec la démonstration. Une copie de la donnée abîmée a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'version-inconnue': [`La sauvegarde vient d’une version plus récente de TaskFlow (version ${chargement.version}).`, 'Cette version ne sait pas la lire : TaskFlow a démarré avec la démonstration. Une copie a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'migration-v2': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, avec un nouveau champ «\u00a0Assigné à\u00a0», vide pour l’instant.`],
+      'migration-v5': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, sprints et blocages compris. Vous pouvez maintenant donner une échéance à vos tickets et les voir dans le calendrier.`],
       'migration-v4': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, sprints compris. Vous pouvez maintenant indiquer qu’un ticket est «\u00a0bloqué par\u00a0» d’autres.`],
       'migration-v3': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris. Vous pouvez maintenant planifier des sprints.`],
       'migration-v1': ['Votre sauvegarde venait d’une ancienne version de TaskFlow.', `Elle a été convertie au nouveau format\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, les champs manquants complétés par leur valeur par défaut.`]
@@ -4538,7 +4772,7 @@
     }
     try {
       if (chargement.donnees) appliquerDonnees(chargement.donnees);
-      else { installerDemonstration(); etat.vue = lirePreference(CLE_VUE) === 'kanban' ? 'kanban' : 'backlog'; }
+      else { installerDemonstration(); etat.vue = ['kanban', 'calendrier'].includes(lirePreference(CLE_VUE)) ? lirePreference(CLE_VUE) : 'backlog'; }
       synchroniserChamps();
       rendreCriteresTri();
       afficherVue(etat.vue);                          // affiche la vue (et dessine la page)
@@ -4578,6 +4812,8 @@
     nombreDeJours, creerSprint, ajouterAuSprint, retirerDuSprint, cloturerSprint, calculerBurndown, noterReleve,
     // B2 · Dépendances et blocages (JS 5c)
     definirBloquants, bloquantsActifs, retirerDesBloquants,
+    // B3 · Échéances et calendrier (JS 5d, et le tri de JS 8)
+    urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
