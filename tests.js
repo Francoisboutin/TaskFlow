@@ -288,7 +288,7 @@
       const identique = resultat => resultat.ok && resultat.exact && JSON.stringify(resultat.tickets) === JSON.stringify(avant.tickets.map(construireTicket)) && JSON.stringify(resultat.ordreManuel) === '[2,1]';
       const etapes = [
         ['sauvegarde v2 → migrée en v3, sans erreur', lu.origine === 'migration-v2' && tickets.length === 2],
-        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.10c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId' && ticket.sprintId === null) && tickets[0].statut === 'termine'],
+        ['chaque ticket reçoit « assigne » = null (et « sprintId » = null, B1.7c) ; le ticket terminé reste « Terminé »', tickets.every(ticket => ticket.assigne === null && Object.keys(ticket).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId' && ticket.sprintId === null) && tickets[0].statut === 'termine'],
         ['« Annuler » rend exactement l’état d’avant (tickets et ordre)', identique(annule) && annule.journal.length === 0],
         ['… y compris après rechargement (journal sauvegardé)', relu.origine === 'sauvegarde' && identique(annuleApresF5) && relu.donnees.utilisateur === 'Camille'],
         ['journal limité aux 10 derniers déplacements', Array.from({ length: 14 }).reduce(liste => journaliser(liste, { id: 1 }), []).length === JOURNAL_MAX],
@@ -436,17 +436,17 @@
       ], () => JSON.stringify({ cree, nomCourt: avec({ nom: 'S1' }), capacite0: avec({ capacite: 0 }) }), 'Création conforme ; nom 3–40, dates valides, fin ≥ début, 1 à 31 jours, capacité 1–999 ; sprint d’un jour accepté');
     } },
 
-    { code: 'T17', groupe: 'b1', nom: 'B1.2 · nombre de jours : bornes incluses, changement d’heure et année bissextile', executer() {
+    { code: 'T17', groupe: 'b1', nom: 'B1.1 · nombre de jours : bornes incluses, changement d’heure et année bissextile', executer() {
       const manquantes = absentes({ nombreDeJours });
       if (manquantes.length) return testAbsent(manquantes);
-      const cas = [['2026-11-04', '2026-11-04', 1, 'B1.2a : un seul jour'], ['2026-03-27', '2026-03-31', 5, 'B1.2b : passage à l’heure d’été'],
-        ['2026-10-23', '2026-10-27', 5, 'B1.2c : retour à l’heure d’hiver'], ['2028-02-27', '2028-03-01', 4, 'B1.2d : année bissextile']];
+      const cas = [['2026-11-04', '2026-11-04', 1, 'B1.1i : un seul jour'], ['2026-03-27', '2026-03-31', 5, 'B1.1j : passage à l’heure d’été'],
+        ['2026-10-23', '2026-10-27', 5, 'B1.1k : retour à l’heure d’hiver'], ['2028-02-27', '2028-03-01', 4, 'B1.1l : année bissextile']];
       const obtenus = cas.map(([debut, fin]) => essayer(() => nombreDeJours(debut, fin)));
       return bilanDesEtapes(cas.map(([debut, fin, attendu, libelle], rang) => [`${libelle} (${debut} → ${fin}) = ${attendu}`, obtenus[rang] === attendu]),
         () => JSON.stringify(obtenus), 'Un jour = 1 ; 5 jours malgré le changement d’heure (mars et octobre) ; 4 jours autour du 29 février');
     } },
 
-    { code: 'T18', groupe: 'b1', nom: 'B1.3 · mettre un ticket dans un sprint : capacité atteinte pile, dépassée, non estimé, terminé', executer() {
+    { code: 'T18', groupe: 'b1', nom: 'B1.2 et B1.3 · mettre un ticket dans un sprint : capacité atteinte pile, dépassée, non estimé, terminé', executer() {
       const manquantes = absentes({ ajouterAuSprint });
       if (manquantes.length) return testAbsent(manquantes);
       const sprints = gelerEnProfondeur([sprintDeTest(1, 20)]);
@@ -460,19 +460,19 @@
       const nonEstime = ajouterAuSprint(depart, sprints, 7, 1);
       const termine = ajouterAuSprint(depart, sprints, 8, 1);
       return bilanDesEtapes([
-        ['B1.3a : 15/20 + 5 points → accepté (20/20, capacité atteinte pile)', pile.ok === true && ticketParId(pile.tickets, 4).sprintId === 1 && pile.tickets.length === depart.length],
-        ['B1.3a : seul le sprintId du ticket ajouté change, nouveau tableau, tableau reçu intact',
+        ['B1.2a : 15/20 + 5 points → accepté (20/20, capacité atteinte pile)', pile.ok === true && ticketParId(pile.tickets, 4).sprintId === 1 && pile.tickets.length === depart.length],
+        ['B1.2a : seul le sprintId du ticket ajouté change, nouveau tableau, tableau reçu intact',
           pile.ok === true && pile.tickets !== depart && JSON.stringify(depart) === copieAvant
           && JSON.stringify({ ...ticketParId(pile.tickets, 4), sprintId: null }) === JSON.stringify(ticketParId(depart, 4))
           && depart.filter(ticket => ticket.id !== 4).every(ticket => JSON.stringify(ticketParId(pile.tickets, ticket.id)) === JSON.stringify(ticket))],
-        ['B1.3b : 15/20 + 8 points → « Capacité dépassée (23/20 points) »', deTrop.ok === false && deTrop.erreur === 'Capacité dépassée (23/20 points)'],
-        ['B1.3c : sprint plein 20/20 + 1 point → « Capacité dépassée (21/20 points) »', surPlein.ok === false && surPlein.erreur === 'Capacité dépassée (21/20 points)'],
-        ['B1.3d : ticket #7 non estimé → refus Definition of Ready', nonEstime.ok === false && nonEstime.erreur === `Definition of Ready${NBSP}: le ticket #7 n’est pas estimé`],
-        ['B1.3e : ticket #8 terminé → « Le ticket #8 est déjà terminé »', termine.ok === false && termine.erreur === 'Le ticket #8 est déjà terminé']
+        ['B1.2b : 15/20 + 8 points → « Capacité dépassée (23/20 points) »', deTrop.ok === false && deTrop.erreur === 'Capacité dépassée (23/20 points)'],
+        ['B1.2c : sprint plein 20/20 + 1 point → « Capacité dépassée (21/20 points) »', surPlein.ok === false && surPlein.erreur === 'Capacité dépassée (21/20 points)'],
+        ['B1.3a : ticket #7 non estimé → refus Definition of Ready', nonEstime.ok === false && nonEstime.erreur === `Definition of Ready${NBSP}: le ticket #7 n’est pas estimé`],
+        ['B1.3b : ticket #8 terminé → « Le ticket #8 est déjà terminé »', termine.ok === false && termine.erreur === 'Le ticket #8 est déjà terminé']
       ], () => JSON.stringify({ pile: pile.ok || pile.erreur, deTrop, surPlein, nonEstime, termine }), `Pile 20/20 accepté ; « ${deTrop.erreur} » ; « ${surPlein.erreur} » ; non estimé et terminé refusés`);
     } },
 
-    { code: 'T19', groupe: 'b1', nom: 'B1.3 · sprint clôturé, introuvable, ajout en double, changement de sprint, terminés comptés, liste abîmée', executer() {
+    { code: 'T19', groupe: 'b1', nom: 'B1.2 et B1.3 · sprint clôturé, introuvable, ajout en double, changement de sprint, terminés comptés, liste abîmée', executer() {
       const manquantes = absentes({ ajouterAuSprint });
       if (manquantes.length) return testAbsent(manquantes);
       const sprints = gelerEnProfondeur([sprintDeTest(1, 20), sprintDeTest(2, 20, { statut: 'cloture', bilan: { engage: 3, termine: 3, restant: 0 }, clotureLe: '2026-11-01' }),
@@ -490,20 +490,20 @@
       const terminesComptes = ajouterAuSprint(depart, sprints, 5, 4);
       const listeAbimee = essayer(() => ajouterAuSprint(gelerEnProfondeur([null, ticketDeTest(4, COLONNE_BACKLOG.id, 5)]), sprints, 4, 1));
       return bilanDesEtapes([
-        ['B1.3f : sprint clôturé → refus « Sprint clôturé : on ne peut plus le modifier »', cloture.ok === false && cloture.erreur === `Sprint clôturé${NBSP}: on ne peut plus le modifier`],
-        ['B1.3g : ticket 99 → « Ticket introuvable (id 99) »', ticketInconnu.ok === false && ticketInconnu.erreur === 'Ticket introuvable (id 99)'],
-        ['B1.3g : sprint 99 → « Sprint introuvable (id 99) »', sprintInconnu.ok === false && sprintInconnu.erreur === 'Sprint introuvable (id 99)'],
-        ['B1.3h : ticket déjà dans ce sprint plein → accepté, rien ne change', doublon.ok === true && JSON.stringify(doublon.tickets) === JSON.stringify(depart) && doublon.tickets !== depart],
-        ['B1.3i : changer de sprint ouvert → accepté, le ticket quitte A', changement.ok === true && ticketParId(changement.tickets, 1).sprintId === 3],
-        ['B1.3i : A a libéré 5 points (15/20 + 5 → accepté)', apresChangement.ok === true],
-        ['B1.3j : ticket d’un sprint clôturé → considéré hors sprint, accepté', depuisCloture.ok === true && ticketParId(depuisCloture.tickets, 9).sprintId === 3],
-        ['B1.3k : les tickets terminés comptent (8 + 8 > 13) → « Capacité dépassée (16/13 points) »', terminesComptes.ok === false && terminesComptes.erreur === 'Capacité dépassée (16/13 points)'],
-        ['B1.3l : liste avec un élément vide → « Liste de tickets invalide », sans exception', listeAbimee.ok === false && listeAbimee.erreur === 'Liste de tickets invalide']
+        ['B1.3c : sprint clôturé → refus « Sprint clôturé : on ne peut plus le modifier »', cloture.ok === false && cloture.erreur === `Sprint clôturé${NBSP}: on ne peut plus le modifier`],
+        ['B1.3d : ticket 99 → « Ticket introuvable (id 99) »', ticketInconnu.ok === false && ticketInconnu.erreur === 'Ticket introuvable (id 99)'],
+        ['B1.3d : sprint 99 → « Sprint introuvable (id 99) »', sprintInconnu.ok === false && sprintInconnu.erreur === 'Sprint introuvable (id 99)'],
+        ['B1.2d : ticket déjà dans ce sprint plein → accepté, rien ne change', doublon.ok === true && JSON.stringify(doublon.tickets) === JSON.stringify(depart) && doublon.tickets !== depart],
+        ['B1.2e : changer de sprint ouvert → accepté, le ticket quitte A', changement.ok === true && ticketParId(changement.tickets, 1).sprintId === 3],
+        ['B1.2e : A a libéré 5 points (15/20 + 5 → accepté)', apresChangement.ok === true],
+        ['B1.2f : ticket d’un sprint clôturé → considéré hors sprint, accepté', depuisCloture.ok === true && ticketParId(depuisCloture.tickets, 9).sprintId === 3],
+        ['B1.2g : les tickets terminés comptent (8 + 8 > 13) → « Capacité dépassée (16/13 points) »', terminesComptes.ok === false && terminesComptes.erreur === 'Capacité dépassée (16/13 points)'],
+        ['B1.3e : liste avec un élément vide → « Liste de tickets invalide », sans exception', listeAbimee.ok === false && listeAbimee.erreur === 'Liste de tickets invalide']
       ], () => JSON.stringify({ cloture, ticketInconnu, sprintInconnu, doublon: doublon.ok || doublon.erreur, changement: changement.ok || changement.erreur, apresChangement: apresChangement.ok || apresChangement.erreur, depuisCloture: depuisCloture.ok || depuisCloture.erreur, terminesComptes, listeAbimee }),
       `Clôturé, introuvables, liste abîmée : refus clairs ; doublon sans effet ; changement de sprint ; « ${terminesComptes.erreur} »`);
     } },
 
-    { code: 'T20', groupe: 'b1', nom: 'B1.4 · sortir un ticket d’un sprint ouvert', executer() {
+    { code: 'T20', groupe: 'b1', nom: 'B1.3 · sortir un ticket d’un sprint ouvert', executer() {
       const manquantes = absentes({ retirerDuSprint });
       if (manquantes.length) return testAbsent(manquantes);
       const sprints = gelerEnProfondeur([sprintDeTest(1, 20), sprintDeTest(2, 20, { statut: 'cloture', bilan: { engage: 3, termine: 3, restant: 0 }, clotureLe: '2026-11-01' })]);
@@ -512,14 +512,14 @@
       const horsSprint = retirerDuSprint(depart, sprints, 4);
       const sprintClos = retirerDuSprint(depart, sprints, 9);
       return bilanDesEtapes([
-        ['B1.4a : retiré → sprintId null, les autres tickets intacts, tableau reçu intact', retire.ok === true && ticketParId(retire.tickets, 1).sprintId === null && depart[0].sprintId === 1
+        ['B1.3f : retiré → sprintId null, les autres tickets intacts, tableau reçu intact', retire.ok === true && ticketParId(retire.tickets, 1).sprintId === null && depart[0].sprintId === 1
           && depart.filter(ticket => ticket.id !== 1).every(ticket => JSON.stringify(ticketParId(retire.tickets, ticket.id)) === JSON.stringify(ticket))],
-        ['B1.4b : ticket #4 hors sprint → « Le ticket #4 n’est dans aucun sprint ouvert »', horsSprint.ok === false && horsSprint.erreur === 'Le ticket #4 n’est dans aucun sprint ouvert'],
-        ['B1.4b : ticket #9 d’un sprint clôturé → « Le ticket #9 n’est dans aucun sprint ouvert »', sprintClos.ok === false && sprintClos.erreur === 'Le ticket #9 n’est dans aucun sprint ouvert']
+        ['B1.3g : ticket #4 hors sprint → « Le ticket #4 n’est dans aucun sprint ouvert »', horsSprint.ok === false && horsSprint.erreur === 'Le ticket #4 n’est dans aucun sprint ouvert'],
+        ['B1.3g : ticket #9 d’un sprint clôturé → « Le ticket #9 n’est dans aucun sprint ouvert »', sprintClos.ok === false && sprintClos.erreur === 'Le ticket #9 n’est dans aucun sprint ouvert']
       ], () => JSON.stringify({ retire: retire.ok || retire.erreur, horsSprint, sprintClos }), 'Retiré du sprint ouvert ; refus pour un ticket hors sprint ou d’un sprint clôturé');
     } },
 
-    { code: 'T21', groupe: 'b1', nom: 'B1.5 · modifier les points d’un ticket de sprint : pile accepté, dépassement et « non estimé » refusés', executer() {
+    { code: 'T21', groupe: 'b1', nom: 'B1.4 · modifier les points d’un ticket de sprint : pile accepté, dépassement et « non estimé » refusés', executer() {
       const sprints = gelerEnProfondeur([sprintDeTest(1, 20)]);
       const depart = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 1), ticketDeTest(2, COLONNES[2].id, 5, 1), ticketDeTest(3, COLONNE_BACKLOG.id, 10, 1)]);   // 18/20
       const modifier = (id, changements, avecSprints = true) => essayer(() => (avecSprints ? modifierTicket(depart, id, changements, sprints) : modifierTicket(depart, id, changements)));
@@ -528,18 +528,29 @@
       const nonEstime = modifier(3, { points: null });
       const sprintForce = modifier(1, { sprintId: 99, titre: 'Titre modifié' });
       const sansSprints = modifier(1, { points: 8 }, false);
+      // B1.4e : sprint déjà au-delà de sa capacité (13/10, ancienne sauvegarde) : seule une hausse des points est contrôlée
+      const sprintsDepasses = gelerEnProfondeur([sprintDeTest(1, 10)]);
+      const departDepasse = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 8, 1), ticketDeTest(2, COLONNES[1].id, 5, 1)]);
+      const modifierDepasse = (id, changements) => essayer(() => modifierTicket(departDepasse, id, changements, sprintsDepasses));
+      const titreDepasse = modifierDepasse(1, { titre: 'Titre corrigé' });
+      const baisseDepasse = modifierDepasse(2, { points: 3 });
+      const hausseDepasse = modifierDepasse(2, { points: 8 });
       return bilanDesEtapes([
-        ['B1.5a : 3 → 5 points (18/20 → 20/20) accepté', pile.ok === true && pile.ticket.points === 5],
-        ['B1.5b : 3 → 8 points → erreur « Capacité dépassée (23/20 points) dans le sprint « Sprint 1 ». »', deTrop.ok === false && !!deTrop.erreurs
+        ['B1.4a : 3 → 5 points (18/20 → 20/20) accepté', pile.ok === true && pile.ticket.points === 5],
+        ['B1.4b : 3 → 8 points → erreur « Capacité dépassée (23/20 points) dans le sprint « Sprint 1 ». »', deTrop.ok === false && !!deTrop.erreurs
           && /^Capacité dépassée \(23\/20 points\) dans le sprint «\s?Sprint 1\s?»\.$/.test(deTrop.erreurs.points || '')],
-        ['B1.5c : ticket de sprint (colonne Backlog) → non estimé refusé', nonEstime.ok === false && !!nonEstime.erreurs && nonEstime.erreurs.points === `Definition of Ready${NBSP}: un ticket d’un sprint doit rester estimé.`],
-        ['B1.5d : changements.sprintId ignoré (le titre change, le sprint non)', sprintForce.ok === true && sprintForce.ticket.sprintId === 1 && sprintForce.ticket.titre === 'Titre modifié'],
-        ['sans 4e paramètre : comportement d’avant (aucun contrôle de sprint)', sansSprints.ok === true && sansSprints.ticket.points === 8]
-      ], () => JSON.stringify({ pile: pile.ok || pile.erreurs || pile.exception, deTrop: deTrop.erreurs || deTrop.ok, nonEstime: nonEstime.erreurs || nonEstime.ok, sprintForce: sprintForce.ticket || sprintForce.erreurs }),
-      'Pile 20/20 accepté ; 23/20 refusé ; non estimé refusé ; sprintId non modifiable ici');
+        ['B1.4c : ticket de sprint (colonne Backlog) → non estimé refusé', nonEstime.ok === false && !!nonEstime.erreurs && nonEstime.erreurs.points === `Definition of Ready${NBSP}: un ticket d’un sprint doit rester estimé.`],
+        ['B1.4d : changements.sprintId ignoré (le titre change, le sprint non)', sprintForce.ok === true && sprintForce.ticket.sprintId === 1 && sprintForce.ticket.titre === 'Titre modifié'],
+        ['sans 4e paramètre : comportement d’avant (aucun contrôle de sprint)', sansSprints.ok === true && sansSprints.ticket.points === 8],
+        ['B1.4e : sprint déjà à 13/10 → modifier un titre ou baisser des points reste possible', titreDepasse.ok === true && titreDepasse.ticket.titre === 'Titre corrigé'
+          && baisseDepasse.ok === true && baisseDepasse.ticket.points === 3],
+        ['B1.4e : … mais une hausse des points reste refusée (13/10 → 16/10)', hausseDepasse.ok === false && /^Capacité dépassée \(16\/10 points\)/.test((hausseDepasse.erreurs && hausseDepasse.erreurs.points) || '')]
+      ], () => JSON.stringify({ pile: pile.ok || pile.erreurs || pile.exception, deTrop: deTrop.erreurs || deTrop.ok, nonEstime: nonEstime.erreurs || nonEstime.ok, sprintForce: sprintForce.ticket || sprintForce.erreurs,
+        titreDepasse: titreDepasse.ok || titreDepasse.erreurs, baisseDepasse: baisseDepasse.ok || baisseDepasse.erreurs, hausseDepasse: hausseDepasse.ok || hausseDepasse.erreurs }),
+      'Pile 20/20 accepté ; 23/20 refusé ; non estimé refusé ; sprintId non modifiable ici ; sprint déjà dépassé : seule une hausse est refusée');
     } },
 
-    { code: 'T22', groupe: 'b1', nom: 'B1.6 · clôturer : le non-terminé revient au Backlog, bilan figé, dernier relevé', executer() {
+    { code: 'T22', groupe: 'b1', nom: 'B1.5 · clôturer : le non-terminé revient au Backlog, bilan figé, dernier relevé', executer() {
       const manquantes = absentes({ cloturerSprint });
       if (manquantes.length) return testAbsent(manquantes);
       const sprints = gelerEnProfondeur([sprintDeTest(1, 20), sprintDeTest(2, 10)]);
@@ -553,23 +564,23 @@
       const avantLeDebut = cloturerSprint(depart, sprints, 1, '2026-11-01');
       const sprintDe = resultat => (resultat.ok ? resultat.sprints.find(element => element.id === 1) : { releves: null });
       return bilanDesEtapes([
-        ['B1.6a : #3 et #4 non terminés → colonne Backlog, sprintId null', clos.ok === true && [3, 4].every(id => ticketParId(clos.tickets, id).statut === COLONNE_BACKLOG.id && ticketParId(clos.tickets, id).sprintId === null)],
-        ['B1.6a : #1 et #2 terminés gardent leur colonne et leur sprintId', clos.ok === true && [1, 2].every(id => ticketParId(clos.tickets, id).statut === DERNIERE.id && ticketParId(clos.tickets, id).sprintId === 1)],
-        ['B1.6a : retournes = [3, 4]', clos.ok === true && JSON.stringify([...clos.retournes].sort((a, b) => a - b)) === '[3,4]'],
-        ['B1.6b : sprint clôturé le 2026-11-13, bilan { engage: 13, termine: 8, restant: 5 }', !!sprint && sprint.statut === 'cloture' && sprint.clotureLe === '2026-11-13'
+        ['B1.5a : #3 et #4 non terminés → colonne Backlog, sprintId null', clos.ok === true && [3, 4].every(id => ticketParId(clos.tickets, id).statut === COLONNE_BACKLOG.id && ticketParId(clos.tickets, id).sprintId === null)],
+        ['B1.5a : #1 et #2 terminés gardent leur colonne et leur sprintId', clos.ok === true && [1, 2].every(id => ticketParId(clos.tickets, id).statut === DERNIERE.id && ticketParId(clos.tickets, id).sprintId === 1)],
+        ['B1.5a : retournes = [3, 4]', clos.ok === true && JSON.stringify([...clos.retournes].sort((a, b) => a - b)) === '[3,4]'],
+        ['B1.5b : sprint clôturé le 2026-11-13, bilan { engage: 13, termine: 8, restant: 5 }', !!sprint && sprint.statut === 'cloture' && sprint.clotureLe === '2026-11-13'
           && jsonTrie(sprint.bilan) === jsonTrie({ engage: 13, termine: 8, restant: 5 })],
-        ['B1.6c : tickets #5 et #6 et sprint 2 intacts ; tableaux reçus intacts', clos.ok === true && JSON.stringify(ticketParId(clos.tickets, 5)) === JSON.stringify(depart[4])
+        ['B1.5c : tickets #5 et #6 et sprint 2 intacts ; tableaux reçus intacts', clos.ok === true && JSON.stringify(ticketParId(clos.tickets, 5)) === JSON.stringify(depart[4])
           && JSON.stringify(ticketParId(clos.tickets, 6)) === JSON.stringify(depart[5]) && JSON.stringify(clos.sprints.find(element => element.id === 2)) === JSON.stringify(sprints[1])
           && JSON.stringify({ depart, sprints }) === copies],
-        ['B1.6d : clôturer deux fois → « Sprint clôturé : on ne peut plus le modifier »', deuxFois.ok === false && deuxFois.erreur === `Sprint clôturé${NBSP}: on ne peut plus le modifier`],
-        ['B1.6e : relevé final des restants (5) à la date de clôture', !!sprint && !!sprint.releves && sprint.releves['2026-11-13'] === 5],
-        ['B1.6e : clôturé après la fin → relevé à la date de fin (2026-11-13)', !!sprintDe(apresLaFin).releves && sprintDe(apresLaFin).releves['2026-11-13'] === 5 && !('2026-11-20' in sprintDe(apresLaFin).releves)],
-        ['B1.6e : clôturé avant son début → aucun relevé', !!sprintDe(avantLeDebut).releves && Object.keys(sprintDe(avantLeDebut).releves).length === 0]
+        ['B1.5d : clôturer deux fois → « Sprint clôturé : on ne peut plus le modifier »', deuxFois.ok === false && deuxFois.erreur === `Sprint clôturé${NBSP}: on ne peut plus le modifier`],
+        ['B1.5e : relevé final des restants (5) à la date de clôture', !!sprint && !!sprint.releves && sprint.releves['2026-11-13'] === 5],
+        ['B1.5e : clôturé après la fin → relevé à la date de fin (2026-11-13)', !!sprintDe(apresLaFin).releves && sprintDe(apresLaFin).releves['2026-11-13'] === 5 && !('2026-11-20' in sprintDe(apresLaFin).releves)],
+        ['B1.5e : clôturé avant son début → aucun relevé', !!sprintDe(avantLeDebut).releves && Object.keys(sprintDe(avantLeDebut).releves).length === 0]
       ], () => JSON.stringify({ clos: clos.ok ? { tickets: clos.tickets.map(ticket => [ticket.id, ticket.statut, ticket.sprintId]), sprint, retournes: clos.retournes } : clos, deuxFois }),
       `2 tickets remis au Backlog ; bilan 13 engagés · 8 terminés · 5 restants ; relevé final ; double clôture refusée`);
     } },
 
-    { code: 'T23', groupe: 'b1', nom: 'B1.7 · ligne idéale : 5 jours, sprint d’un seul jour (pas de division par zéro), arrondi, 0 point', executer() {
+    { code: 'T23', groupe: 'b1', nom: 'B1.6 · ligne idéale : 5 jours, sprint d’un seul jour (pas de division par zéro), arrondi, 0 point', executer() {
       const manquantes = absentes({ calculerBurndown });
       if (manquantes.length) return testAbsent(manquantes);
       const finies = valeurs => Array.isArray(valeurs) && valeurs.every(valeur => valeur === null || (typeof valeur === 'number' && Number.isFinite(valeur)));
@@ -583,16 +594,16 @@
       const c = essayer(() => calculerBurndown(troisJours, dix, '2026-11-02'));
       const d = essayer(() => calculerBurndown(cinqJours, gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 5)]), '2026-11-04'));   // aucun ticket dans le sprint
       return bilanDesEtapes([
-        ['B1.7a : 5 jours, 10 points → ideal [10, 8, 6, 4, 2, 0], 5 dates', JSON.stringify(a.ideal) === '[10,8,6,4,2,0]' && a.engage === 10
+        ['B1.6a : 5 jours, 10 points → ideal [10, 8, 6, 4, 2, 0], 5 dates', JSON.stringify(a.ideal) === '[10,8,6,4,2,0]' && a.engage === 10
           && JSON.stringify(a.jours) === '["2026-11-02","2026-11-03","2026-11-04","2026-11-05","2026-11-06"]'],
-        ['B1.7b : sprint d’un seul jour, 8 points → ideal [8, 0], aucun NaN ni Infinity', JSON.stringify(b.ideal) === '[8,0]' && finies(b.ideal) && finies(b.restant) && Array.isArray(b.jours) && b.jours.length === 1],
-        ['B1.7c : 3 jours, 10 points → ideal [10, 6.67, 3.33, 0]', JSON.stringify(c.ideal) === '[10,6.67,3.33,0]'],
-        ['B1.7d : 0 point engagé → que des 0 (et null pour le futur), aucun NaN', d.engage === 0 && finies(d.ideal) && finies(d.restant)
+        ['B1.6b : sprint d’un seul jour, 8 points → ideal [8, 0], aucun NaN ni Infinity', JSON.stringify(b.ideal) === '[8,0]' && finies(b.ideal) && finies(b.restant) && Array.isArray(b.jours) && b.jours.length === 1],
+        ['B1.6c : 3 jours, 10 points → ideal [10, 6.67, 3.33, 0]', JSON.stringify(c.ideal) === '[10,6.67,3.33,0]'],
+        ['B1.6d : 0 point engagé → que des 0 (et null pour le futur), aucun NaN', d.engage === 0 && finies(d.ideal) && finies(d.restant)
           && d.ideal.every(valeur => valeur === 0) && d.restant.every(valeur => valeur === 0 || valeur === null)]
       ], () => JSON.stringify({ a, b, c, d }), 'Idéal [10…0] ; un jour : [8, 0] ; 6.67 / 3.33 ; 0 point : que des 0 ; jamais NaN');
     } },
 
-    { code: 'T24', groupe: 'b1', nom: 'B1.7 · restants : relevés, aujourd’hui en direct, jours sans relevé, futur, sprint clôturé', executer() {
+    { code: 'T24', groupe: 'b1', nom: 'B1.6 · restants : relevés, aujourd’hui en direct, jours sans relevé, futur, sprint clôturé', executer() {
       const manquantes = absentes({ calculerBurndown });
       if (manquantes.length) return testAbsent(manquantes);
       const tickets = gelerEnProfondeur([ticketDeTest(1, DERNIERE.id, 3, 1), ticketDeTest(2, DERNIERE.id, 3, 1), ticketDeTest(3, COLONNES[1].id, 4, 1)]);   // 10 engagés, 4 restants
@@ -605,16 +616,16 @@
         releves: { '2026-11-02': 12, '2026-11-04': 4 }, bilan: { engage: 12, termine: 8, restant: 4 } }));
       const h = essayer(() => calculerBurndown(clos, tickets, '2026-11-10'));
       return bilanDesEtapes([
-        ['B1.7e : restant [10, 10, 7, 4, null, null] (relevés, aujourd’hui = 4 en direct, futur null)', JSON.stringify(e.restant) === '[10,10,7,4,null,null]'],
-        ['B1.7f : jours sans relevé → dernier relevé reporté : [10, 9, 9, 9, 4, null]', JSON.stringify(f1.restant) === '[10,9,9,9,4,null]'],
-        ['B1.7f : aucun relevé → l’engagé est reporté : [10, 10, 10, 4, null, null]', JSON.stringify(f2.restant) === '[10,10,10,4,null,null]'],
-        ['B1.7g : pas commencé → [10, null, null, null, null, null]', JSON.stringify(g.restant) === '[10,null,null,null,null,null]'],
-        ['B1.7h : clôturé → engage = bilan.engage (12), [12, 12, 12, 4, null, null]', h.engage === 12 && JSON.stringify(h.restant) === '[12,12,12,4,null,null]' && h.ideal[0] === 12]
+        ['B1.6e : restant [10, 10, 7, 4, null, null] (relevés, aujourd’hui = 4 en direct, futur null)', JSON.stringify(e.restant) === '[10,10,7,4,null,null]'],
+        ['B1.6f : jours sans relevé → dernier relevé reporté : [10, 9, 9, 9, 4, null]', JSON.stringify(f1.restant) === '[10,9,9,9,4,null]'],
+        ['B1.6f : aucun relevé → l’engagé est reporté : [10, 10, 10, 4, null, null]', JSON.stringify(f2.restant) === '[10,10,10,4,null,null]'],
+        ['B1.6g : pas commencé → [10, null, null, null, null, null]', JSON.stringify(g.restant) === '[10,null,null,null,null,null]'],
+        ['B1.6h : clôturé → engage = bilan.engage (12), [12, 12, 12, 4, null, null]', h.engage === 12 && JSON.stringify(h.restant) === '[12,12,12,4,null,null]' && h.ideal[0] === 12]
       ], () => JSON.stringify({ e: e.restant || e, f1: f1.restant || f1, f2: f2.restant || f2, g: g.restant || g, h: h.restant || h, hEngage: h.engage }),
       'Relevés et report du dernier relevé ; aujourd’hui en direct ; futur null ; sprint clôturé figé');
     } },
 
-    { code: 'T25', groupe: 'b1', nom: 'B1.8 · relevé quotidien des points restants', executer() {
+    { code: 'T25', groupe: 'b1', nom: 'B1.6 · relevé quotidien des points restants', executer() {
       const manquantes = absentes({ noterReleve });
       if (manquantes.length) return testAbsent(manquantes);
       const tickets = gelerEnProfondeur([ticketDeTest(1, DERNIERE.id, 6, 1), ticketDeTest(2, COLONNES[1].id, 4, 1), ticketDeTest(3, COLONNES[1].id, 5)]);    // 4 restants dans le sprint
@@ -622,14 +633,14 @@
       const clos = gelerEnProfondeur(sprintDeTest(1, 20, { debut: '2026-11-02', fin: '2026-11-06', statut: 'cloture', clotureLe: '2026-11-03', bilan: { engage: 10, termine: 6, restant: 4 } }));
       const note = essayer(() => noterReleve(ouvert, tickets, '2026-11-04'));
       return bilanDesEtapes([
-        ['B1.8a : nouveau sprint avec releves["2026-11-04"] = 4, anciens relevés gardés, sprint reçu intact', note !== ouvert && !!note.releves && note.releves['2026-11-04'] === 4
+        ['B1.6i : nouveau sprint avec releves["2026-11-04"] = 4, anciens relevés gardés, sprint reçu intact', note !== ouvert && !!note.releves && note.releves['2026-11-04'] === 4
           && note.releves['2026-11-02'] === 10 && !('2026-11-04' in ouvert.releves)],
-        ['B1.8b : pas commencé, après la fin ou clôturé → le même sprint, sans changement', noterReleve(ouvert, tickets, '2026-11-01') === ouvert
+        ['B1.6j : pas commencé, après la fin ou clôturé → le même sprint, sans changement', noterReleve(ouvert, tickets, '2026-11-01') === ouvert
           && noterReleve(ouvert, tickets, '2026-11-07') === ouvert && noterReleve(clos, tickets, '2026-11-04') === clos]
       ], () => JSON.stringify(note), 'Relevé du jour noté sur un nouveau sprint ; rien hors des dates ou après clôture');
     } },
 
-    { code: 'T26', groupe: 'b1', nom: 'B1.9 · dessin SVG du burndown : jamais de NaN, lignes idéale et restante, titre accessible', executer() {
+    { code: 'T26', groupe: 'b1', nom: 'B1.6 · dessin SVG du burndown : jamais de NaN, lignes idéale et restante, titre accessible', executer() {
       const manquantes = absentes({ calculerBurndown, dessinerBurndown });
       if (manquantes.length) return testAbsent(manquantes);
       const unJour = calculerBurndown(gelerEnProfondeur(sprintDeTest(1, 20, { debut: '2026-11-04', fin: '2026-11-04' })), gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 8, 1)]), '2026-11-04');
@@ -640,13 +651,13 @@
       const estSvg = svg => typeof svg === 'string' && /^\s*<svg[\s>]/.test(svg) && /<\/svg>\s*$/.test(svg);
       const aClasse = (svg, classe) => new RegExp(`class="[^"]*\\b${classe}\\b`).test(svg);
       return bilanDesEtapes([
-        ['B1.9a : sprint d’un seul jour et sprint à 0 point → SVG sans NaN ni Infinity', svgs.every(estSvg) && svgs.every(svg => !/NaN|Infinity/.test(svg))],
-        ['B1.9b : ligne idéale (bd-ideal) et ligne des restants (bd-restant) présentes', svgs.every(svg => aClasse(svg, 'bd-ideal') && aClasse(svg, 'bd-restant'))],
-        ['B1.9b : un <title> décrit le graphique', svgs.every(svg => /<title[^>]*>[^<]{10,}<\/title>/.test(svg))]
+        ['B1.6k : sprint d’un seul jour et sprint à 0 point → SVG sans NaN ni Infinity', svgs.every(estSvg) && svgs.every(svg => !/NaN|Infinity/.test(svg))],
+        ['B1.6l : ligne idéale (bd-ideal) et ligne des restants (bd-restant) présentes', svgs.every(svg => aClasse(svg, 'bd-ideal') && aClasse(svg, 'bd-restant'))],
+        ['B1.6l : un <title> décrit le graphique', svgs.every(svg => /<title[^>]*>[^<]{10,}<\/title>/.test(svg))]
       ], () => svgs.map(svg => (typeof svg === 'string' ? svg.slice(0, 160) : JSON.stringify(svg))).join(' | '), 'SVG valide dans les 3 cas (un jour, 0 point, normal) ; lignes idéale et restante ; titre');
     } },
 
-    { code: 'T27', groupe: 'b1', nom: 'B1.10 · sauvegarde v4 : aller-retour des sprints, migration v3, réparation d’une sauvegarde abîmée', executer() {
+    { code: 'T27', groupe: 'b1', nom: 'B1.7 · sauvegarde v4 : aller-retour des sprints, migration v3, réparation d’une sauvegarde abîmée', executer() {
       const sprintClos = sprintDeTest(1, 20, { statut: 'cloture', clotureLe: '2026-10-30', debut: '2026-10-19', fin: '2026-10-30', releves: { '2026-10-19': 8, '2026-10-30': 0 }, bilan: { engage: 8, termine: 8, restant: 0 } });
       const sprintOuvert = sprintDeTest(2, 20, { releves: { '2026-11-02': 5 } });
       const projet = { id: 1, nom: 'Projet sprints', tickets: gelerEnProfondeur([ticketDeTest(1, DERNIERE.id, 8, 1), ticketDeTest(2, COLONNES[1].id, 5, 2), ticketDeTest(3, COLONNE_BACKLOG.id, null)]),
@@ -668,19 +679,19 @@
       const cles = 'id,titre,type,priorite,points,statut,creeLe,assigne,sprintId';
       return bilanDesEtapes([
         ['VERSION_SAUVEGARDE vaut 4', VERSION_SAUVEGARDE === 4],
-        ['B1.10a : aller-retour → origine « sauvegarde », tickets (sprintId compris) identiques', relu.origine === 'sauvegarde' && !!projetRelu && JSON.stringify(projetRelu.tickets) === JSON.stringify(projet.tickets)],
-        ['B1.10a : sprints (relevés, bilan, statut) identiques', !!projetRelu && jsonTrie(projetRelu.sprints) === jsonTrie(projet.sprints)],
-        ['B1.10b : sauvegarde v3 → « migration-v3 », sprintId null, sprints []', v3.origine === 'migration-v3' && !!v3.donnees && Object.keys(v3.donnees.projets[0].tickets[0]).join(',') === cles
+        ['B1.7a : aller-retour → origine « sauvegarde », tickets (sprintId compris) identiques', relu.origine === 'sauvegarde' && !!projetRelu && JSON.stringify(projetRelu.tickets) === JSON.stringify(projet.tickets)],
+        ['B1.7a : sprints (relevés, bilan, statut) identiques', !!projetRelu && jsonTrie(projetRelu.sprints) === jsonTrie(projet.sprints)],
+        ['B1.7b : sauvegarde v3 → « migration-v3 », sprintId null, sprints []', v3.origine === 'migration-v3' && !!v3.donnees && Object.keys(v3.donnees.projets[0].tickets[0]).join(',') === cles
           && v3.donnees.projets[0].tickets[0].sprintId === null && v3.donnees.projets[0].tickets[0].assigne === 'Camille' && JSON.stringify(v3.donnees.projets[0].sprints) === '[]'],
-        ['B1.10d : sprints aux dates, capacité ou durée invalides écartés ; seul le sprint 1 reste', abimee.origine === 'sauvegarde' && !!projetAbime && JSON.stringify(projetAbime.sprints.map(element => element.id)) === '[1]'],
-        ['B1.10d : #1 garde son sprint ; sprint inconnu, écarté ou ticket non estimé → sprintId null', !!projetAbime && ticketParId(projetAbime.tickets, 1).sprintId === 1
+        ['B1.7d : sprints aux dates, capacité ou durée invalides écartés ; seul le sprint 1 reste', abimee.origine === 'sauvegarde' && !!projetAbime && JSON.stringify(projetAbime.sprints.map(element => element.id)) === '[1]'],
+        ['B1.7d : #1 garde son sprint ; sprint inconnu, écarté ou ticket non estimé → sprintId null', !!projetAbime && ticketParId(projetAbime.tickets, 1).sprintId === 1
           && [2, 3, 4, 5, 6].every(id => ticketParId(projetAbime.tickets, id) && ticketParId(projetAbime.tickets, id).sprintId === null)],
-        ['B1.10e : version 5 → « version-inconnue »', charger('{"version":5,"tickets":[],"projets":[]}').origine === 'version-inconnue']
+        ['B1.7e : version 5 → « version-inconnue »', charger('{"version":5,"tickets":[],"projets":[]}').origine === 'version-inconnue']
       ], () => JSON.stringify({ relu: relu.origine, sprintsRelus: projetRelu && projetRelu.sprints, v3: v3.origine, abimee: abimee.origine, sprintsAbimes: projetAbime && projetAbime.sprints.map(element => element.id),
         ticketsAbimes: projetAbime && projetAbime.tickets.map(ticket => [ticket.id, ticket.sprintId]) }), 'v4 : aller-retour identique ; v3 migrée (sprintId null, sprints []) ; sauvegarde abîmée réparée ; v5 inconnue');
     } },
 
-    { code: 'T28', groupe: 'b1', nom: 'B1.11 · import et export : le sprint n’est ni exporté ni importé', executer() {
+    { code: 'T28', groupe: 'b1', nom: 'B1.7 · import et export : le sprint n’est ni exporté ni importé', executer() {
       const manquantes = absentes({ ticketsEnCsv, ticketsEnJson, analyserFichier });
       if (manquantes.length) return testAbsent(manquantes);
       const tickets = gelerEnProfondeur([ticketDeTest(1, COLONNES[1].id, 3, 2)]);
@@ -690,10 +701,10 @@
       const analyseCsv = analyserFichier('import.csv', 'titre;points;sprintId\nTicket CSV avec sprint;3;3');
       const importe = analyse => (analyse.ok ? importerTickets(analyse.lignes, [], { dateDuJour: '2026-11-04' }).importes : []);
       return bilanDesEtapes([
-        ['B1.11a : en-tête CSV = id;titre;type;priorite;points;statut;creeLe;assigne', enteteCsv === 'id;titre;type;priorite;points;statut;creeLe;assigne'],
-        ['B1.11a : JSON exporté sans sprintId', Array.isArray(json) && Object.keys(json[0]).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne'],
-        ['B1.11b : colonne sprintId signalée « hors du modèle, ignorée » (JSON et CSV)', analyseJson.ok && analyseJson.colonnesIgnorees.includes('sprintId') && analyseCsv.ok && analyseCsv.colonnesIgnorees.includes('sprintId')],
-        ['B1.11b : tickets importés avec sprintId null', [analyseJson, analyseCsv].every(analyse => { const importes = importe(analyse); return importes.length === 1 && importes[0].sprintId === null; })]
+        ['B1.7f : en-tête CSV = id;titre;type;priorite;points;statut;creeLe;assigne', enteteCsv === 'id;titre;type;priorite;points;statut;creeLe;assigne'],
+        ['B1.7f : JSON exporté sans sprintId', Array.isArray(json) && Object.keys(json[0]).join(',') === 'id,titre,type,priorite,points,statut,creeLe,assigne'],
+        ['B1.7g : colonne sprintId signalée « hors du modèle, ignorée » (JSON et CSV)', analyseJson.ok && analyseJson.colonnesIgnorees.includes('sprintId') && analyseCsv.ok && analyseCsv.colonnesIgnorees.includes('sprintId')],
+        ['B1.7g : tickets importés avec sprintId null', [analyseJson, analyseCsv].every(analyse => { const importes = importe(analyse); return importes.length === 1 && importes[0].sprintId === null; })]
       ], () => JSON.stringify({ enteteCsv, json: json[0], ignoreesJson: analyseJson.colonnesIgnorees, importes: [...importe(analyseJson), ...importe(analyseCsv)] }), 'Export sans sprintId ; à l’import, sprintId ignoré et signalé, tickets hors sprint');
     } }
   ];
