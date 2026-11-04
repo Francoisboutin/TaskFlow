@@ -31,7 +31,7 @@
      JS 17  Import et export : fenêtres et téléchargement
      JS 17b Sprints : panneau, jauge, glisser-déposer, clôture, burndown SVG (B1)
      JS 17c Échéances : badges, résumé des retards, vue Calendrier (B3)
-     JS 18  Onglets Backlog / Kanban / Calendrier
+     JS 18  Onglets Backlog / Sprints / Kanban / Calendrier
      JS 19  Panneaux repliables
      JS 20  Thème clair / sombre
      JS 21  (Auto-tests : déplacés dans tests.js)
@@ -2222,7 +2222,6 @@
   function rendreLaPage() {
     const projet = projetActif();
     rendreJournal(projet);
-    rendreSprints(projet);
     rendreRetards(projet);
     const tousLesTickets = projet.tickets;
     const { motsTapes, visibles } = ticketsAffiches(projet);
@@ -2231,6 +2230,7 @@
     const statsAffichees = calculerStats(visibles);
     const statsDuProjet = calculerStats(tousLesTickets);
     idsAffiches = visibles.map(ticket => ticket.id);
+    rendreSprints(projet, visibles);                  // B4.4 : les filtres s’appliquent aux tickets disponibles
 
     // Projet : titre et liste déroulante
     page.titreProjet.textContent = projet.nom;
@@ -2292,11 +2292,12 @@
   }
 
   // Élément qui contient les tickets de la vue affichée (Backlog, Kanban ou Calendrier)
-  const conteneurDeLaVue = () => (etat.vue === 'kanban' ? page.kanban : etat.vue === 'calendrier' ? calendrierUI.grille : page.liste);
+  const conteneurDeLaVue = () => (etat.vue === 'kanban' ? page.kanban : etat.vue === 'calendrier' ? calendrierUI.grille : etat.vue === 'sprints' ? sprintsUI.vue : page.liste);
 
   // Met en valeur un ticket qui vient d’être ajouté ; renvoie false s’il est masqué par les filtres
   function surlignerTicket(id) {
     // Vue calendrier : un ticket affiché peut n’avoir aucune case (pas d’échéance, autre mois) sans être masqué par les filtres
+    if (etat.vue === 'sprints') return idsAffiches.includes(id);
     if (etat.vue === 'calendrier') {
       const bouton = calendrierUI.grille.querySelector(`[data-modifier="${id}"]`);
       if (bouton) { bouton.classList.add('is-new'); setTimeout(() => bouton.classList.remove('is-new'), 2800); }
@@ -3908,6 +3909,7 @@
      l’interface ne fait qu’appliquer leur résultat, ou expliquer leur refus.
      ======================================================================== */
   const sprintsUI = {
+    vue: trouver('#vue-sprints'),
     blocChoix: trouver('#sprints-choix'),
     choix: trouver('#choix-sprint'),
     boutonNouveau: trouver('#btn-nouveau-sprint'),
@@ -3924,6 +3926,7 @@
     listeDans: trouver('#sprint-dans'),
     listeDisponibles: trouver('#sprint-disponibles'),
     titreDans: trouver('#sprint-dans-titre'),
+    titreDisponibles: trouver('#sprint-disponibles-titre'),
     burndown: trouver('#burndown'),
     // Fenêtre « Nouveau sprint »
     fenetre: trouver('#dlg-sprint'),
@@ -4009,7 +4012,7 @@
       + `<span class="sprint-num">#${ticket.id}</span><span class="sprint-titre">${echapper(ticket.titre)}<span class="sprint-mentions">${mentions}</span></span>${points}${bouton}</li>`;
   }
 
-  function rendreSprints(projet) {
+  function rendreSprints(projet, visibles = projet.tickets) {
     const sprints = projet.sprints || [];
     const sprint = sprintAffiche(projet);
     etat.sprintAfficheId = sprint ? sprint.id : null;
@@ -4049,10 +4052,12 @@
       : `<li class="sprint-liste-vide">${ouvert ? 'Glissez ici des tickets estimés, ou utilisez le bouton +.' : 'Aucun ticket terminé.'}</li>`);
     sprintsUI.zoneDisponibles.hidden = !ouvert;
     if (ouvert) {
-      const disponibles = projet.tickets.filter(ticket => ticket.sprintId !== sprint.id && !estTermine(ticket));
+      const disponibles = visibles.filter(ticket => ticket.sprintId !== sprint.id && !estTermine(ticket));
+      const masques = projet.tickets.filter(ticket => ticket.sprintId !== sprint.id && !estTermine(ticket)).length - disponibles.length;
       remplacerContenu(sprintsUI.listeDisponibles, disponibles.length
         ? disponibles.map(ticket => htmlTicketDeSprint(ticket, { dansLeSprint: false, modifiable: true, autreSprint: sprintOuvertDe(ticket, projet.sprints) })).join('')
-        : '<li class="sprint-liste-vide">Aucun autre ticket à planifier.</li>');
+        : `<li class="sprint-liste-vide">${masques ? 'Aucun ticket disponible ne correspond à la recherche ou aux filtres.' : 'Aucun autre ticket à planifier.'}</li>`);
+      sprintsUI.titreDisponibles.textContent = masques ? `Tickets disponibles (${disponibles.length}, ${masques} masqué${masques > 1 ? 's' : ''} par les filtres)` : `Tickets disponibles (${disponibles.length})`;
     }
     remplacerContenu(sprintsUI.burndown, dessinerBurndown(calculerBurndown(sprint, projet.tickets, aujourdhui)));
   }
@@ -4302,21 +4307,24 @@
 
 
   /* ========================================================================
-     JS 18 · ONGLETS BACKLOG / KANBAN / CALENDRIER
+     JS 18 · ONGLETS BACKLOG / SPRINTS / KANBAN / CALENDRIER
      ======================================================================== */
-  const VUES = ['backlog', 'kanban', 'calendrier'];
+  const VUES = ['backlog', 'sprints', 'kanban', 'calendrier'];   // B4 : Sprints devient une vue
   function afficherVue(vue) {
     etat.vue = VUES.includes(vue) ? vue : 'backlog';
     page.vueBacklog.hidden = etat.vue !== 'backlog';
     page.vueKanban.hidden = etat.vue !== 'kanban';
     calendrierUI.vue.hidden = etat.vue !== 'calendrier';
+    sprintsUI.vue.hidden = etat.vue !== 'sprints';
     for (const onglet of page.onglets) {
       const actif = onglet.dataset.vue === etat.vue;
       onglet.setAttribute('aria-selected', actif ? 'true' : 'false');
       onglet.tabIndex = actif ? 0 : -1;               // seul l’onglet actif est atteint avec Tab
     }
     enregistrerPreference(CLE_VUE, etat.vue);
-    trouver('#vue-aide').textContent = etat.vue === 'calendrier'
+    trouver('#vue-aide').textContent = etat.vue === 'sprints'
+      ? 'Planifiez\u00a0: créez un sprint, glissez-y des tickets estimés dans la limite de sa capacité, suivez le burndown, puis clôturez. La recherche et les filtres s’appliquent aux tickets disponibles.'
+      : etat.vue === 'calendrier'
       ? 'Les échéances du mois, du lundi au dimanche. Cliquez sur un ticket pour le modifier ; la recherche et les filtres s’appliquent aussi ici.'
       : etat.vue === 'kanban'
       ? `Une colonne par étape. Glissez une carte (ou utilisez ◀ ▶) pour la faire avancer. Limites WIP\u00a0: ${COLONNES.filter(colonne => colonne.wip !== null).map(colonne => `«\u00a0${colonne.titre}\u00a0» ${colonne.wip} tickets`).join(', ')}. ${COLONNES.filter(colonne => colonne.depuis).map(colonne => `On n’entre dans «\u00a0${colonne.titre}\u00a0» que depuis ${originesAdmises(colonne)}`).join('. ')}, et un ticket non estimé reste dans le «\u00a0${COLONNE_BACKLOG.titre}\u00a0» (Definition of Ready).`
@@ -4551,7 +4559,7 @@
         prochainIdTicket: prochainId,                 // les numéros déjà attribués sont sautés (numerosAttribues)
         prochainIdProjet: Math.max(Number.isInteger(compteurs.prochainProjet) ? compteurs.prochainProjet : 0, Math.max(...idsProjets) + 1),
         numerosAttribues: [...attribues],
-        vue: ['kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',
+        vue: ['sprints', 'kanban', 'calendrier'].includes(affichage.vue) ? affichage.vue : 'backlog',
         tri: triDepuis(affichage.tri),
         filtres: filtresDepuis(affichage.filtres),
         utilisateur: typeof affichage.utilisateur === 'string' ? affichage.utilisateur.trim().replace(/\s+/g, ' ').slice(0, ASSIGNE_MAX) : ''
@@ -4772,7 +4780,7 @@
     }
     try {
       if (chargement.donnees) appliquerDonnees(chargement.donnees);
-      else { installerDemonstration(); etat.vue = ['kanban', 'calendrier'].includes(lirePreference(CLE_VUE)) ? lirePreference(CLE_VUE) : 'backlog'; }
+      else { installerDemonstration(); etat.vue = ['sprints', 'kanban', 'calendrier'].includes(lirePreference(CLE_VUE)) ? lirePreference(CLE_VUE) : 'backlog'; }
       synchroniserChamps();
       rendreCriteresTri();
       afficherVue(etat.vue);                          // affiche la vue (et dessine la page)

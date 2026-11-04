@@ -24,6 +24,7 @@
      CSS 16  Fenêtres et formulaires (dont les cartes de planning poker)
      CSS 17  Notification
      CSS 18  Adaptations aux écrans et aux préférences de l’appareil
+     CSS 19  Disposition : largeur, espace de travail, vue Sprints (B4)
    Préfixes des classes : btn- bouton · dlg- fenêtre (dialogue) · kb- Kanban ·
    at- auto-tests · is- état temporaire (is-reduit, is-plein…).
    ########################################################################## */
@@ -179,7 +180,7 @@ img { max-width: 100%; }
 :focus-visible { outline: 3px solid var(--contour-focus); outline-offset: 2px; }
 #resultat:focus { outline: none; }          /* reçoit le focus après une suppression, sans contour */
 
-.app { max-width: 1200px; margin: 0 auto; padding: 18px 24px 56px; }
+.app { max-width: 1600px; margin: 0 auto; padding: 18px 24px 56px; }   /* B4 : 1 600 px (1 200 px avant) */
 
 
 /* ==========================================================================
@@ -1320,4 +1321,54 @@ dialog::backdrop { background: rgba(10, 16, 30, .58); }
 /* Animations réduites si l’appareil le demande */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* ==========================================================================
+   CSS 19 · DISPOSITION DE L’ÉCRAN (B4)
+   Contenu jusqu’à 1 600 px. Espace de travail : à partir de 1 180 px, une colonne
+   latérale (filtres, derniers déplacements) à gauche et la vue active à droite ;
+   en dessous, filtres, vue et déplacements s’empilent dans cet ordre.
+   ========================================================================== */
+.espace {
+  display: grid; gap: 20px; margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "filtres" "vue" "journal";
+}
+.espace-filtres { grid-area: filtres; min-width: 0; }
+.espace-filtres .filtres { margin-top: 0; }
+.espace-vue { grid-area: vue; min-width: 0; }
+.espace > .journal { grid-area: journal; margin-top: 0; }
+.espace-vue > .sprints { margin-top: 0; }
+@media (min-width: 1180px) {
+  .espace {
+    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "filtres vue" "journal vue";
+    align-items: start;
+  }
+  /* Colonne latérale : les groupes de filtres s’empilent, l’aide passe sous le titre */
+  .espace-filtres .filtres-aide { flex-basis: 100%; order: 3; }
+  .espace-filtres .filtres-tete #btn-reset { order: 4; padding-left: 0; }
+  .espace-filtres .filtres-grille { flex-direction: column; gap: 16px; }
+  .espace-filtres .filtres-grille > .filtre { flex: none; }
+  .espace-filtres .dates .input { width: 128px; }
+  /* Derniers déplacements, en colonne étroite : l’heure au-dessus du texte */
+  .espace > .journal .journal-tete .btn { width: 100%; justify-content: center; }
+  .espace > .journal .journal-liste li { grid-template-columns: minmax(0, 1fr) auto; }
+  .espace > .journal .journal-heure { grid-column: 1 / -1; font-size: .8rem; }
+}
+/* Vue Sprints : informations et jauge à gauche, burndown à droite, puis les deux listes */
+.sprint-haut { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 14px; }
+.sprint-haut .sprint-infos { margin-top: 0; align-items: flex-start; align-content: flex-start; }
+.sprint-haut .burndown { margin: 0; }
+@media (min-width: 1000px) {
+  .sprint-haut { grid-template-columns: minmax(280px, 2fr) minmax(0, 3fr); align-items: start; }
+  .sprint-haut .sprint-infos { flex-direction: column; align-items: stretch; }
+  .sprint-haut .sprint-infos-texte { flex: none; }   /* en colonne, « flex: 1 1 320px » deviendrait 320 px de hauteur */
+  .sprint-haut .sprint-infos .btn { align-self: flex-start; }
+}
+/* Téléphone : les 4 onglets passent en grille 2 × 2 (en ligne, ils dépasseraient l’écran) */
+@media (max-width: 560px) {
+  .vues-onglets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .vue-onglet { justify-content: center; padding: 0 10px; }
 }

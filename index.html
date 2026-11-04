@@ -41,8 +41,8 @@
        HTML 2  Message de démarrage, guide de première visite, titre du projet, graphiques
                et tableau de bord (compteurs, avancement, WIP)
        HTML 3  Onglets Backlog / Kanban
-       HTML 4  Recherche, boutons « Ajouter », « Importer », « Exporter », « Réinitialiser »,
-               rapport d’import et filtres
+       HTML 4  Barre d’actions : recherche, « Ajouter », « Importer », « Exporter », rapport d’import
+       Espace de travail (B4) : filtres et derniers déplacements à gauche, les 4 vues à droite
        HTML 5  Vue Backlog : tri et tableau des tickets
        HTML 6  Vue Kanban (colonnes générées par le JS à partir de COLONNES)
        HTML 6b Sprints et burndown (B1) · HTML 6c Vue Calendrier (B3)
@@ -187,6 +187,9 @@
         <button type="button" class="vue-onglet" role="tab" id="onglet-backlog" data-vue="backlog" aria-controls="vue-backlog" aria-selected="true">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Backlog
         </button>
+        <button type="button" class="vue-onglet" role="tab" id="onglet-sprints" data-vue="sprints" aria-controls="vue-sprints" aria-selected="false" tabindex="-1">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 15.5 7.5 11l3 3L17 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 7.5H17V12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Sprints
+        </button>
         <button type="button" class="vue-onglet" role="tab" id="onglet-kanban" data-vue="kanban" aria-controls="vue-kanban" aria-selected="false" tabindex="-1">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="3" width="4" height="14" rx="1.2" stroke="currentColor" stroke-width="1.8"/><rect x="8" y="3" width="4" height="10" rx="1.2" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="3" width="4" height="7" rx="1.2" stroke="currentColor" stroke-width="1.8"/></svg>Kanban
         </button>
@@ -201,8 +204,8 @@
     <!-- B3 · Résumé des retards par colonne (masqué s’il n’y en a pas) -->
     <p class="retards" id="retards" role="status" hidden></p>
 
-    <!-- ====================== HTML 4 · RECHERCHE ET FILTRES (communs aux deux vues) ====================== -->
-    <section aria-label="Recherche et filtres">
+    <!-- ====================== HTML 4 · BARRE D’ACTIONS (commune aux 4 vues, B4.3) ====================== -->
+    <section aria-label="Recherche et actions">
       <div class="barre">
         <div class="recherche">
           <label for="recherche" class="sr-only">Rechercher un ticket par son titre</label>
@@ -236,6 +239,13 @@
         <div id="rapport-import-contenu" role="status"></div>
       </section>
 
+    </section>
+
+    <!-- ====================== ESPACE DE TRAVAIL (B4.2) ======================
+         Grand écran : colonne latérale (filtres, derniers déplacements) à gauche, vue active à droite.
+         Écran étroit : filtres, vue, déplacements, l’un sous l’autre. -->
+    <div class="espace">
+    <div class="espace-filtres">
       <div class="filtres" data-repliable="filtres">
         <div class="filtres-tete">
           <h2>Filtres</h2>
@@ -276,8 +286,9 @@
           </div>
         </div></div></div>
       </div>
-    </section>
+    </div>
 
+    <div class="espace-vue">
     <!-- ====================== HTML 5 · VUE BACKLOG ====================== -->
     <section id="vue-backlog" role="tabpanel" aria-labelledby="onglet-backlog">
       <h2 class="sr-only">Liste des tickets</h2>
@@ -350,8 +361,8 @@
       <table class="calendrier" id="calendrier" aria-labelledby="cal-titre"></table>
     </section>
 
-    <!-- ====================== HTML 6b · SPRINTS ET BURNDOWN (B1) ====================== -->
-    <section class="sprints" aria-labelledby="sprints-titre">
+    <!-- ====================== HTML 6b · VUE SPRINTS ET BURNDOWN (B1, disposition B4) ====================== -->
+    <section id="vue-sprints" class="sprints" role="tabpanel" aria-labelledby="onglet-sprints" hidden>
       <div class="sprints-tete">
         <div>
           <h2 id="sprints-titre">Sprints</h2>
@@ -368,6 +379,7 @@
       <p class="sprint-vide" id="sprint-vide">Aucun sprint pour ce projet. Créez-en un : nom, dates et capacité en points.</p>
       <!-- Rempli par le JS (JS 17b) à partir de projet.sprints -->
       <div class="sprint-detail" id="sprint-detail" hidden>
+        <div class="sprint-haut">
         <div class="sprint-infos">
           <div class="sprint-infos-texte">
             <p class="sprint-ligne"><span class="sprint-etat" id="sprint-etat"></span> <span id="sprint-dates"></span></p>
@@ -375,6 +387,13 @@
             <span class="sprint-jauge" id="sprint-jauge" aria-hidden="true"><span class="sprint-jauge-remplie" id="sprint-jauge-remplie"></span></span>
           </div>
           <button type="button" class="btn btn-danger-doux btn-petit" id="btn-cloturer-sprint">Clôturer le sprint…</button>
+        </div>
+        <figure class="burndown">
+          <figcaption class="burndown-tete"><strong>Burndown</strong>
+            <span class="burndown-legende"><span class="legende-ideal" aria-hidden="true"></span>Rythme idéal <span class="legende-restant" aria-hidden="true"></span>Points restants</span>
+          </figcaption>
+          <div class="burndown-dessin" id="burndown"></div>
+        </figure>
         </div>
         <p id="aide-glisser-sprint" class="sprint-aide">Glissez un ticket d’une liste à l’autre, ou utilisez les boutons <strong>+</strong> et <strong>×</strong>. Un ticket non estimé ou terminé ne peut pas entrer dans un sprint.</p>
         <div class="sprint-listes">
@@ -387,14 +406,9 @@
             <ul class="sprint-liste" id="sprint-disponibles" aria-labelledby="sprint-disponibles-titre"></ul>
           </div>
         </div>
-        <figure class="burndown">
-          <figcaption class="burndown-tete"><strong>Burndown</strong>
-            <span class="burndown-legende"><span class="legende-ideal" aria-hidden="true"></span>Rythme idéal <span class="legende-restant" aria-hidden="true"></span>Points restants</span>
-          </figcaption>
-          <div class="burndown-dessin" id="burndown"></div>
-        </figure>
       </div>
     </section>
+    </div>
 
     <!-- Journal des 10 derniers déplacements, avec « Annuler » le dernier (Ctrl+Z) -->
     <section class="journal" aria-labelledby="journal-titre">
@@ -409,6 +423,8 @@
       </div>
       <ol class="journal-liste" id="journal-liste"></ol>
     </section>
+    </div>
+
 
     <!-- Vos données : sauvegarde automatique et réinitialisations (actions rares, gardées à l’écart) -->
     <section class="donnees" aria-labelledby="donnees-titre">
