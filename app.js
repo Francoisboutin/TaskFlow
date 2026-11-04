@@ -13,7 +13,7 @@
      JS 3   Validation d’un ticket
      JS 4   Règles métier : fonctions pures (deplacerTicket, modifierTicket, calculerStats)
      JS 5   Import et export : fonctions pures (CSV, JSON)
-     JS 5b  Sprints et burndown : fonctions pures (B1) ; sprints en cours et tickets du Kanban (B5)
+     JS 5b  Sprints et burndown : fonctions pures (B1) ; sprints en cours et tickets du Kanban (B5) ; démarrage (B6)
      JS 5c  Dépendances et blocages : fonctions pures, règle R6 (B2)
      JS 5d  Échéances et calendrier : fonctions pures (B3)
    ── Zone 3 · UI
@@ -108,7 +108,7 @@
   // Sauvegarde des données (JS 22) : une enveloppe versionnée, sous une seule clé
   const CLE_SAUVEGARDE = 'taskflow';
   const CLE_SAUVEGARDE_ILLISIBLE = 'taskflow-illisible';   // copie d’une sauvegarde abîmée, gardée à part
-  const VERSION_SAUVEGARDE = 6;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints, ticket.sprintId ; v5 : ticket.bloquePar ; v6 : ticket.echeance
+  const VERSION_SAUVEGARDE = 7;   // v3 : « assigne », journal, « Je suis » ; v4 : sprints, ticket.sprintId ; v5 : ticket.bloquePar ; v6 : ticket.echeance ; v7 : sprint.demarreLe
 
   // Les 12 tickets du projet de démonstration « Refonte de l’espace client »
   const TICKETS_INITIAUX = [
@@ -932,6 +932,36 @@
     const affiches = liste.filter(ticket => ticket && numeros.has(ticket.sprintId));
     return { sprints: enCours, tickets: affiches, horsSprint: liste.length - affiches.length };
   }
+  // B6 · Démarrage d’un sprint : ses tickets « Backlog » passent « À faire », UNE fois (sprint.demarreLe)
+  const COLONNE_A_FAIRE = COLONNES[1];
+  // demarrerSprints(tickets, sprints, aujourdhui) → { tickets, sprints, demarres: [{ sprintId, tickets }] }
+  // Démarre chaque sprint en cours (B5.1) qui n’a pas encore démarré ; rien à démarrer → mêmes tableaux.
+  function demarrerSprints(tickets, sprints, aujourdhui) {
+    const aDemarrer = sprintsEnCours(sprints, aujourdhui).filter(sprint => !sprint.demarreLe);
+    if (!aDemarrer.length) return { tickets, sprints, demarres: [] };
+    let nouveaux = Array.isArray(tickets) ? tickets : [];
+    const demarres = [];
+    for (const sprint of aDemarrer) {
+      const passes = [];
+      for (const ticket of nouveaux) {
+        if (!ticket || ticket.sprintId !== sprint.id || ticket.statut !== COLONNE_BACKLOG.id) continue;
+        const essai = deplacerTicket(nouveaux, ticket.id, COLONNE_A_FAIRE.id);   // mêmes règles qu’un déplacement à la main
+        if (essai.ok) { nouveaux = essai.tickets; passes.push(ticket.id); }
+      }
+      demarres.push({ sprintId: sprint.id, tickets: passes });
+    }
+    const numeros = new Set(aDemarrer.map(sprint => sprint.id));
+    return { tickets: nouveaux, sprints: listeDeSprints(sprints).map(sprint => (numeros.has(sprint.id) ? { ...sprint, demarreLe: aujourdhui } : sprint)), demarres };
+  }
+  // B6.5 · Ticket mis dans un sprint déjà démarré : « Backlog » → « À faire » ; sinon le tableau reçu, inchangé
+  function aFaireSiSprintDemarre(tickets, sprints, idTicket) {
+    const liste = Array.isArray(tickets) ? tickets : [];
+    const ticket = liste.find(element => element && element.id === idTicket);
+    const sprint = ticket ? sprintOuvertDe(ticket, sprints) : null;
+    if (!sprint || !sprint.demarreLe || ticket.statut !== COLONNE_BACKLOG.id) return liste;
+    const essai = deplacerTicket(liste, idTicket, COLONNE_A_FAIRE.id);
+    return essai.ok ? essai.tickets : liste;
+  }
   const ticketsDuSprint = (tickets, sprint) => (Array.isArray(tickets) ? tickets : []).filter(ticket => ticket && ticket.sprintId === sprint.id);
   const pointsEngages = (tickets, sprint) => ticketsDuSprint(tickets, sprint).reduce((total, ticket) => total + pointsDe(ticket), 0);
   const pointsRestants = (tickets, sprint) => ticketsDuSprint(tickets, sprint).filter(ticket => !estTermine(ticket)).reduce((total, ticket) => total + pointsDe(ticket), 0);
@@ -974,7 +1004,7 @@
     if (Object.keys(erreurs).length) return { ok: false, erreurs };
     const id = liste.reduce((plusGrand, sprint) => (Number.isInteger(sprint.id) ? Math.max(plusGrand, sprint.id) : plusGrand), 0) + 1;
     const sprint = { id, nom: donnees.nom.trim(), debut: donnees.debut, fin: donnees.fin, capacite: donnees.capacite,
-      statut: SPRINT_OUVERT, releves: {}, bilan: null, clotureLe: null };
+      statut: SPRINT_OUVERT, releves: {}, bilan: null, clotureLe: null, demarreLe: null };   // B6 : pas encore démarré
     return { ok: true, sprints: [...liste, sprint], sprint };
   }
 
@@ -1084,7 +1114,8 @@
       sprints.push({ id: element.id, nom: erreurs.nom ? `Sprint ${element.id}` : element.nom.trim(), debut: element.debut, fin: element.fin, capacite: element.capacite,
         statut, releves,
         bilan: statut === SPRINT_CLOTURE ? { engage: positif(bilanBrut.engage), termine: positif(bilanBrut.termine), restant: positif(bilanBrut.restant) } : null,
-        clotureLe: statut === SPRINT_CLOTURE ? (dateIsoValide(element.clotureLe) ? element.clotureLe : element.fin) : null });
+        clotureLe: statut === SPRINT_CLOTURE ? (dateIsoValide(element.clotureLe) ? element.clotureLe : element.fin) : null,
+        demarreLe: dateIsoValide(element.demarreLe) ? element.demarreLe : null });   // B6.7c : abîmé → null
     }
     return sprints;
   }
@@ -2229,9 +2260,11 @@
   }
 
   function rendre() {
+    demarrerSprintsDuJour();                          // B6 : les sprints dont la date de début est atteinte démarrent
     noterRelevesDuJour();                             // B1.8 : relevé du jour des sprints ouverts (burndown)
     rendreLaPage();
-    sauvegarder();                                    // chaque modification passe par ici : elle est enregistrée
+    sauvegarder();
+    if (annonceDeDemarrage) { const message = annonceDeDemarrage; annonceDeDemarrage = null; notifier(message); }                                    // chaque modification passe par ici : elle est enregistrée
   }
   // Journal des déplacements du projet affiché
   function rendreJournal(projet) {
@@ -4006,6 +4039,22 @@
       || sprints[sprints.length - 1] || null;
   }
 
+  // B6 · Démarre les sprints du projet affiché dont la date de début est atteinte ; l’annonce suit l’affichage
+  let annonceDeDemarrage = null;
+  function demarrerSprintsDuJour() {
+    const projet = projetActif();
+    if (!projet || !Array.isArray(projet.sprints) || !projet.sprints.length) return;
+    const resultat = demarrerSprints(projet.tickets, projet.sprints, aujourdhuiIso());
+    if (!resultat.demarres.length) return;
+    projet.tickets = resultat.tickets;
+    projet.sprints = resultat.sprints;
+    const messages = resultat.demarres.filter(demarre => demarre.tickets.length).map(demarre => {
+      const sprint = projet.sprints.find(element => element.id === demarre.sprintId);
+      return `Sprint «\u00a0${sprint.nom}\u00a0» démarré\u00a0: ${pluriel(demarre.tickets.length, 'ticket')} passé${demarre.tickets.length > 1 ? 's' : ''} «\u00a0${COLONNE_A_FAIRE.titre}\u00a0».`;
+    });
+    if (messages.length) annonceDeDemarrage = messages.join(' ');
+  }
+
   // Le relevé du jour de chaque sprint ouvert (appelé avant chaque affichage, donc avant chaque sauvegarde)
   function noterRelevesDuJour() {
     const projet = projetActif();
@@ -4134,7 +4183,14 @@
   function mettreDansLeSprint(id) {
     const projet = projetActif();
     const sprint = sprintAffiche(projet);
-    if (sprint) appliquerAuSprint(ajouterAuSprint(projet.tickets, projet.sprints, id, sprint.id), `Ticket #${id} mis dans le sprint «\u00a0${sprint.nom}\u00a0».`);
+    if (!sprint) return;
+    const resultat = ajouterAuSprint(projet.tickets, projet.sprints, id, sprint.id);
+    if (!resultat.ok) { appliquerAuSprint(resultat); return; }
+    const tickets = aFaireSiSprintDemarre(resultat.tickets, projet.sprints, id);
+    const passe = tickets !== resultat.tickets;
+    const message = `Ticket #${id} mis dans le sprint «\u00a0${sprint.nom}\u00a0»${passe ? `, et passé «\u00a0${COLONNE_A_FAIRE.titre}\u00a0» (le sprint est démarré)` : ''}.`;
+    appliquerAuSprint({ ok: true, tickets }, message);
+    if (passe) notifier(message);
   }
   function sortirDuSprint(id) {
     const projet = projetActif();
@@ -4681,8 +4737,18 @@
     };
   }
 
+  // Migration v6 → v7 (B6) : aucun sprint n’est encore marqué démarré ; un sprint déjà commencé démarrera au premier affichage
+  function migrerV6versV7(brut) {
+    return {
+      ...brut,
+      version: 7,
+      projets: Array.isArray(brut.projets) ? brut.projets.map(projet => (projet && typeof projet === 'object' && Array.isArray(projet.sprints)
+        ? { ...projet, sprints: projet.sprints.map(sprint => (sprint && typeof sprint === 'object' ? { ...sprint, demarreLe: null } : sprint)) } : projet)) : brut.projets
+    };
+  }
+
   // charger([texte]) → { origine, donnees, ... } ; ne lève JAMAIS d’exception.
-  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'migration-v4' | 'migration-v5' | 'illisible' | 'version-inconnue'
+  //   origine : 'premier-lancement' | 'sauvegarde' | 'migration-v1' | 'migration-v2' | 'migration-v3' | 'migration-v4' | 'migration-v5' | 'migration-v6' | 'illisible' | 'version-inconnue'
   //   donnees : l’état à appliquer, ou null (→ démonstration)
   //   Sans argument, lit la sauvegarde de ce navigateur.
   function charger(texte) {
@@ -4694,24 +4760,28 @@
       const brut = JSON.parse(texte);
       if (!brut) return { origine: 'premier-lancement', donnees: null };
       if (Array.isArray(brut)) {
-        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut))))));
+        const lu = lireEnveloppeV2(migrerV6versV7(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(migrerV1versV2(brut)))))));
         return { origine: 'migration-v1', donnees: lu.donnees, nombre: brut.length };
       }
       if (typeof brut === 'object' && brut.version === 2) {
-        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(brut)))));
+        const lu = lireEnveloppeV2(migrerV6versV7(migrerV5versV6(migrerV4versV5(migrerV3versV4(migrerV2versV3(brut))))));
         return { origine: 'migration-v2', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 3) {
-        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(migrerV3versV4(brut))));
+        const lu = lireEnveloppeV2(migrerV6versV7(migrerV5versV6(migrerV4versV5(migrerV3versV4(brut)))));
         return { origine: 'migration-v3', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 4) {
-        const lu = lireEnveloppeV2(migrerV5versV6(migrerV4versV5(brut)));
+        const lu = lireEnveloppeV2(migrerV6versV7(migrerV5versV6(migrerV4versV5(brut))));
         return { origine: 'migration-v4', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === 5) {
-        const lu = lireEnveloppeV2(migrerV5versV6(brut));
+        const lu = lireEnveloppeV2(migrerV6versV7(migrerV5versV6(brut)));
         return { origine: 'migration-v5', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
+      }
+      if (typeof brut === 'object' && brut.version === 6) {
+        const lu = lireEnveloppeV2(migrerV6versV7(brut));
+        return { origine: 'migration-v6', donnees: lu.donnees, nombre: lu.donnees.projets.reduce((total, projet) => total + projet.tickets.length, 0) };
       }
       if (typeof brut === 'object' && brut.version === VERSION_SAUVEGARDE) {
         const lu = lireEnveloppeV2(brut);
@@ -4794,6 +4864,7 @@
       'illisible': ['La sauvegarde de ce navigateur était illisible.', 'TaskFlow a redémarré avec la démonstration. Une copie de la donnée abîmée a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'version-inconnue': [`La sauvegarde vient d’une version plus récente de TaskFlow (version ${chargement.version}).`, 'Cette version ne sait pas la lire : TaskFlow a démarré avec la démonstration. Une copie a été gardée à part (clé «\u00a0taskflow-illisible\u00a0»).'],
       'migration-v2': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, avec un nouveau champ «\u00a0Assigné à\u00a0», vide pour l’instant.`],
+      'migration-v6': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, avec vos sprints, blocages et échéances. Désormais, au démarrage d’un sprint, ses tickets «\u00a0Backlog\u00a0» passent «\u00a0À faire\u00a0».`],
       'migration-v5': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, sprints et blocages compris. Vous pouvez maintenant donner une échéance à vos tickets et les voir dans le calendrier.`],
       'migration-v4': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris, sprints compris. Vous pouvez maintenant indiquer qu’un ticket est «\u00a0bloqué par\u00a0» d’autres.`],
       'migration-v3': ['Votre sauvegarde venait de la version précédente de TaskFlow.', `Elle a été mise à jour\u00a0: ${pluriel(chargement.nombre || 0, 'ticket')} repris. Vous pouvez maintenant planifier des sprints.`],
@@ -4880,6 +4951,8 @@
     urgence, creerComparateur, correspondAUrgence, ajouterMois, grilleDuMois, resumeDesRetards,
     // B5 · Kanban du sprint en cours (JS 5b)
     sprintsEnCours, ticketsDuKanban,
+    // B6 · Démarrage d’un sprint (JS 5b)
+    demarrerSprints, aFaireSiSprintDemarre,
     // Zone 3 · UI
     dessinerBurndown,
     page, trouver, echapper, mouvementReduit, ICONE_COCHE, ICONE_CROIX
